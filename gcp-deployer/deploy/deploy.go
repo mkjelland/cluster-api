@@ -35,6 +35,7 @@ import (
 type deployer struct {
 	token               string
 	configPath          string
+	clusterDeployer     clusterDeployer
 	machineDeployer     machineDeployer
 	client              v1alpha1.ClusterV1alpha1Interface
 	clientSet           clientset.Interface
@@ -61,13 +62,18 @@ func NewDeployer(provider string, kubeConfigPath string, machineSetupConfigPath 
 	if err != nil {
 		glog.Exit(fmt.Sprintf("Could not create config watch: %v\n", err))
 	}
-	ma, err := google.NewMachineActuator(token, nil, configWatch)
+	machineActuator, err := google.NewMachineActuator(token, nil, configWatch)
+	if err != nil {
+		glog.Exit(err)
+	}
+	clusterActuator, err := google.NewClusterActuator()
 	if err != nil {
 		glog.Exit(err)
 	}
 	return &deployer{
 		token:           token,
-		machineDeployer: ma,
+		clusterDeployer: clusterActuator,
+		machineDeployer: machineActuator,
 		configPath:      kubeConfigPath,
 	}
 }
@@ -78,7 +84,8 @@ func (d *deployer) CreateCluster(c *clusterv1.Cluster, machines []*clusterv1.Mac
 		if vmCreated {
 			d.deleteMasterVM(c, machines)
 		}
-		d.machineDeployer.PostDelete(c, machines)
+		d.machineDeployer.PostDelete(c)
+		d.clusterDeployer.Delete(c)
 		return err
 	}
 
@@ -119,7 +126,7 @@ func (d *deployer) DeleteCluster() error {
 	}
 
 	glog.Info("Running post delete operations")
-	if err := d.machineDeployer.PostDelete(cluster, machines); err != nil {
+	if err := d.machineDeployer.PostDelete(cluster); err != nil {
 		return err
 	}
 	glog.Infof("Deletion complete")
