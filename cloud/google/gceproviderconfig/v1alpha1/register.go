@@ -39,7 +39,10 @@ func init() {
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&GCEProviderConfig{},
+		&GCEMachineProviderConfig{},
+	)
+	scheme.AddKnownTypes(SchemeGroupVersion,
+		&GCEClusterProviderConfig{},
 	)
 	return nil
 }

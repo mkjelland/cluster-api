@@ -148,7 +148,7 @@ func (gce *GCEClient) CreateMachineController(cluster *clusterv1.Cluster, initia
 	}
 
 	// Setup SSH access to master VM
-	if err := gce.setupSSHAccess(util.GetMaster(initialMachines)); err != nil {
+	if err := gce.setupSSHAccess(cluster, util.GetMaster(initialMachines)); err != nil {
 		return err
 	}
 
@@ -194,13 +194,18 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 	if gce.machineSetupConfigGetter == nil {
 		return errors.New("a valid machineSetupConfigGetter is required")
 	}
-	config, err := gce.providerconfig(machine.Spec.ProviderConfig)
+	machineConfig, err := gce.providerconfig(machine.Spec.ProviderConfig)
+	if err != nil {
+		return gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
+			"Cannot unmarshal providerConfig field: %v", err))
+	}
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
 			"Cannot unmarshal providerConfig field: %v", err))
 	}
 
-	if verr := gce.validateMachine(machine, config); verr != nil {
+	if verr := gce.validateMachine(machine, machineConfig); verr != nil {
 		return gce.handleMachineError(machine, verr)
 	}
 
@@ -214,7 +219,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		return err
 	}
 	configParams := &machinesetup.ConfigParams{
-		OS:       config.OS,
+		OS:       machineConfig.OS,
 		Roles:    machine.Spec.Roles,
 		Versions: machine.Spec.Versions,
 	}
@@ -234,7 +239,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 				"invalid master configuration: missing Machine.Spec.Versions.ControlPlane"))
 		}
 		var err error
-		metadata, err = masterMetadata(gce.kubeadmToken, cluster, machine, config.Project, &machineSetupMetadata)
+		metadata, err = masterMetadata(gce.kubeadmToken, cluster, machine, clusterConfig.Project, &machineSetupMetadata)
 		if err != nil {
 			return err
 		}
@@ -243,7 +248,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 			return errors.New("invalid cluster state: cannot create a Kubernetes node without an API endpoint")
 		}
 		var err error
-		metadata, err = nodeMetadata(gce.kubeadmToken, cluster, machine, config.Project, &machineSetupMetadata)
+		metadata, err = nodeMetadata(gce.kubeadmToken, cluster, machine, clusterConfig.Project, &machineSetupMetadata)
 		if err != nil {
 			return err
 		}
@@ -258,14 +263,14 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		})
 	}
 
-	instance, err := gce.instanceIfExists(machine)
+	instance, err := gce.instanceIfExists(cluster, machine)
 	if err != nil {
 		return err
 	}
 
 	name := machine.ObjectMeta.Name
-	project := config.Project
-	zone := config.Zone
+	project := clusterConfig.Project
+	zone := machineConfig.Zone
 	diskSize := int64(30)
 
 	if instance == nil {
@@ -276,7 +281,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 
 		op, err := gce.computeService.InstancesInsert(project, zone, &compute.Instance{
 			Name:         name,
-			MachineType:  fmt.Sprintf("zones/%s/machineTypes/%s", zone, config.MachineType),
+			MachineType:  fmt.Sprintf("zones/%s/machineTypes/%s", zone, machineConfig.MachineType),
 			CanIpForward: true,
 			NetworkInterfaces: []*compute.NetworkInterface{
 				{
@@ -319,7 +324,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		})
 
 		if err == nil {
-			err = gce.waitForOperation(config, op)
+			err = gce.waitForOperation(clusterConfig, op)
 		}
 
 		if err != nil {
@@ -330,7 +335,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		// If we have a machineClient, then annotate the machine so that we
 		// remember exactly what VM we created for it.
 		if gce.machineClient != nil {
-			return gce.updateAnnotations(machine)
+			return gce.updateAnnotations(cluster, machine)
 		}
 	} else {
 		glog.Infof("Skipped creating a VM that already exists.\n")
@@ -339,8 +344,8 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 	return nil
 }
 
-func (gce *GCEClient) Delete(machine *clusterv1.Machine) error {
-	instance, err := gce.instanceIfExists(machine)
+func (gce *GCEClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
+	instance, err := gce.instanceIfExists(cluster, machine)
 	if err != nil {
 		return err
 	}
@@ -350,13 +355,19 @@ func (gce *GCEClient) Delete(machine *clusterv1.Machine) error {
 		return nil
 	}
 
-	config, err := gce.providerconfig(machine.Spec.ProviderConfig)
+	machineConfig, err := gce.providerconfig(machine.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(machine,
 			apierrors.InvalidMachineConfiguration("Cannot unmarshal providerConfig field: %v", err))
 	}
 
-	if verr := gce.validateMachine(machine, config); verr != nil {
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
+	if err != nil {
+		return gce.handleMachineError(machine,
+			apierrors.InvalidMachineConfiguration("Cannot unmarshal providerConfig field: %v", err))
+	}
+
+	if verr := gce.validateMachine(machine, machineConfig); verr != nil {
 		return gce.handleMachineError(machine, verr)
 	}
 
@@ -370,14 +381,14 @@ func (gce *GCEClient) Delete(machine *clusterv1.Machine) error {
 
 	// If the annotations are missing, fall back on providerConfig
 	if project == "" || zone == "" || name == "" {
-		project = config.Project
-		zone = config.Zone
+		project = clusterConfig.Project
+		zone = machineConfig.Zone
 		name = machine.ObjectMeta.Name
 	}
 
 	op, err := gce.computeService.InstancesDelete(project, zone, name)
 	if err == nil {
-		err = gce.waitForOperation(config, op)
+		err = gce.waitForOperation(clusterConfig, op)
 	}
 	if err != nil {
 		return gce.handleMachineError(machine, apierrors.DeleteMachine(
@@ -404,15 +415,13 @@ func (gce *GCEClient) PostCreate(cluster *clusterv1.Cluster, machines []*cluster
 		return fmt.Errorf("error creating service account for ingress controller: %v", err)
 	}
 
-	if len(machines) > 0 {
-		config, err := gce.providerconfig(machines[0].Spec.ProviderConfig)
-		if err != nil {
-			return fmt.Errorf("error creating ingress controller: %v", err)
-		}
-		err = CreateIngressController(config.Project, cluster.Name)
-		if err != nil {
-			return fmt.Errorf("error creating ingress controller: %v", err)
-		}
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
+	if err != nil {
+		return fmt.Errorf("error creating ingress controller: %v", err)
+	}
+	err = CreateIngressController(clusterConfig.Project, cluster.Name)
+	if err != nil {
+		return fmt.Errorf("error creating ingress controller: %v", err)
 	}
 
 	return nil
@@ -452,13 +461,13 @@ func (gce *GCEClient) Update(cluster *clusterv1.Cluster, goalMachine *clusterv1.
 
 	currentMachine := (*clusterv1.Machine)(status)
 	if currentMachine == nil {
-		instance, err := gce.instanceIfExists(goalMachine)
+		instance, err := gce.instanceIfExists(cluster, goalMachine)
 		if err != nil {
 			return err
 		}
 		if instance != nil && instance.Labels[BootstrapLabelKey] != "" {
 			glog.Infof("Populating current state for boostrap machine %v", goalMachine.ObjectMeta.Name)
-			return gce.updateAnnotations(goalMachine)
+			return gce.updateAnnotations(cluster, goalMachine)
 		} else {
 			return fmt.Errorf("Cannot retrieve current state to update machine %v", goalMachine.ObjectMeta.Name)
 		}
@@ -470,13 +479,13 @@ func (gce *GCEClient) Update(cluster *clusterv1.Cluster, goalMachine *clusterv1.
 
 	if util.IsMaster(currentMachine) {
 		glog.Infof("Doing an in-place upgrade for master.\n")
-		err = gce.updateMasterInplace(currentMachine, goalMachine)
+		err = gce.updateMasterInplace(cluster, currentMachine, goalMachine)
 		if err != nil {
 			glog.Errorf("master inplace update failed: %v", err)
 		}
 	} else {
 		glog.Infof("re-creating machine %s for update.", currentMachine.ObjectMeta.Name)
-		err = gce.Delete(currentMachine)
+		err = gce.Delete(cluster, currentMachine)
 		if err != nil {
 			glog.Errorf("delete machine %s for update failed: %v", currentMachine.ObjectMeta.Name, err)
 		} else {
@@ -493,21 +502,26 @@ func (gce *GCEClient) Update(cluster *clusterv1.Cluster, goalMachine *clusterv1.
 	return err
 }
 
-func (gce *GCEClient) Exists(machine *clusterv1.Machine) (bool, error) {
-	i, err := gce.instanceIfExists(machine)
+func (gce *GCEClient) Exists(cluster *clusterv1.Cluster, machine *clusterv1.Machine) (bool, error) {
+	i, err := gce.instanceIfExists(cluster, machine)
 	if err != nil {
 		return false, err
 	}
 	return (i != nil), err
 }
 
-func (gce *GCEClient) GetIP(machine *clusterv1.Machine) (string, error) {
-	config, err := gce.providerconfig(machine.Spec.ProviderConfig)
+func (gce *GCEClient) GetIP(cluster *clusterv1.Cluster, machine *clusterv1.Machine) (string, error) {
+	machineConfig, err := gce.providerconfig(machine.Spec.ProviderConfig)
 	if err != nil {
 		return "", err
 	}
 
-	instance, err := gce.computeService.InstancesGet(config.Project, config.Zone, machine.ObjectMeta.Name)
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
+	if err != nil {
+		return "", err
+	}
+
+	instance, err := gce.computeService.InstancesGet(clusterConfig.Project, machineConfig.Zone, machine.ObjectMeta.Name)
 	if err != nil {
 		return "", err
 	}
@@ -524,24 +538,30 @@ func (gce *GCEClient) GetIP(machine *clusterv1.Machine) (string, error) {
 	return publicIP, nil
 }
 
-func (gce *GCEClient) GetKubeConfig(master *clusterv1.Machine) (string, error) {
-	config, err := gce.providerconfig(master.Spec.ProviderConfig)
+func (gce *GCEClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clusterv1.Machine) (string, error) {
+	machineConfig, err := gce.providerconfig(master.Spec.ProviderConfig)
+	if err != nil {
+		return "", err
+	}
+
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
 	if err != nil {
 		return "", err
 	}
 
 	command := "sudo cat /etc/kubernetes/admin.conf"
 	result := strings.TrimSpace(util.ExecCommand(
-		"gcloud", "compute", "ssh", "--project", config.Project,
-		"--zone", config.Zone, master.ObjectMeta.Name, "--command", command, "--", "-q"))
+		"gcloud", "compute", "ssh", "--project", clusterConfig.Project,
+		"--zone", machineConfig.Zone, master.ObjectMeta.Name, "--command", command, "--", "-q"))
 	return result, nil
 }
 
-func (gce *GCEClient) updateAnnotations(machine *clusterv1.Machine) error {
-	config, err := gce.providerconfig(machine.Spec.ProviderConfig)
+func (gce *GCEClient) updateAnnotations(cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
+	machineConfig, err := gce.providerconfig(machine.Spec.ProviderConfig)
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
 	name := machine.ObjectMeta.Name
-	project := config.Project
-	zone := config.Zone
+	project := clusterConfig.Project
+	zone := machineConfig.Zone
 
 	if err != nil {
 		return gce.handleMachineError(machine,
@@ -573,7 +593,7 @@ func (gce *GCEClient) requiresUpdate(a *clusterv1.Machine, b *clusterv1.Machine)
 }
 
 // Gets the instance represented by the given machine
-func (gce *GCEClient) instanceIfExists(machine *clusterv1.Machine) (*compute.Instance, error) {
+func (gce *GCEClient) instanceIfExists(cluster *clusterv1.Cluster, machine *clusterv1.Machine) (*compute.Instance, error) {
 	identifyingMachine := machine
 
 	// Try to use the last saved status locating the machine
@@ -588,12 +608,17 @@ func (gce *GCEClient) instanceIfExists(machine *clusterv1.Machine) (*compute.Ins
 	}
 
 	// Get the VM via specified location and name
-	config, err := gce.providerconfig(identifyingMachine.Spec.ProviderConfig)
+	machineConfig, err := gce.providerconfig(identifyingMachine.Spec.ProviderConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	instance, err := gce.computeService.InstancesGet(config.Project, config.Zone, identifyingMachine.ObjectMeta.Name)
+	clusterConfig, err := gce.providerclusterconfig(cluster.Spec.ProviderConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	instance, err := gce.computeService.InstancesGet(clusterConfig.Project, machineConfig.Zone, identifyingMachine.ObjectMeta.Name)
 	if err != nil {
 		// TODO: Use formal way to check for error code 404
 		if strings.Contains(err.Error(), "Error 404") {
@@ -605,12 +630,12 @@ func (gce *GCEClient) instanceIfExists(machine *clusterv1.Machine) (*compute.Ins
 	return instance, nil
 }
 
-func (gce *GCEClient) providerconfig(providerConfig clusterv1.ProviderConfig) (*gceconfigv1.GCEProviderConfig, error) {
+func (gce *GCEClient) providerconfig(providerConfig clusterv1.ProviderConfig) (*gceconfigv1.GCEMachineProviderConfig, error) {
 	obj, gvk, err := gce.codecFactory.UniversalDecoder(gceconfigv1.SchemeGroupVersion).Decode(providerConfig.Value.Raw, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("decoding failure: %v", err)
 	}
-	config, ok := obj.(*gceconfigv1.GCEProviderConfig)
+	config, ok := obj.(*gceconfigv1.GCEMachineProviderConfig)
 	if !ok {
 		return nil, fmt.Errorf("failure to cast to gce; type: %v", gvk)
 	}
@@ -618,7 +643,20 @@ func (gce *GCEClient) providerconfig(providerConfig clusterv1.ProviderConfig) (*
 	return config, nil
 }
 
-func (gce *GCEClient) waitForOperation(c *gceconfigv1.GCEProviderConfig, op *compute.Operation) error {
+func (gce *GCEClient) providerclusterconfig(providerConfig clusterv1.ProviderConfig) (*gceconfigv1.GCEClusterProviderConfig, error) {
+	obj, gvk, err := gce.codecFactory.UniversalDecoder(gceconfigv1.SchemeGroupVersion).Decode(providerConfig.Value.Raw, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decoding failure: %v", err)
+	}
+	config, ok := obj.(*gceconfigv1.GCEClusterProviderConfig)
+	if !ok {
+		return nil, fmt.Errorf("failure to cast to gce; type: %v", gvk)
+	}
+
+	return config, nil
+}
+
+func (gce *GCEClient) waitForOperation(c *gceconfigv1.GCEClusterProviderConfig, op *compute.Operation) error {
 	glog.Infof("Wait for %v %q...", op.OperationType, op.Name)
 	defer glog.Infof("Finish wait for %v %q...", op.OperationType, op.Name)
 
@@ -642,7 +680,7 @@ func (gce *GCEClient) waitForOperation(c *gceconfigv1.GCEProviderConfig, op *com
 }
 
 // getOp returns an updated operation.
-func (gce *GCEClient) getOp(c *gceconfigv1.GCEProviderConfig, op *compute.Operation) (*compute.Operation, error) {
+func (gce *GCEClient) getOp(c *gceconfigv1.GCEClusterProviderConfig, op *compute.Operation) (*compute.Operation, error) {
 	return gce.computeService.ZoneOperationsGet(c.Project, path.Base(op.Zone), op.Name)
 }
 
@@ -659,13 +697,13 @@ func (gce *GCEClient) checkOp(op *compute.Operation, err error) error {
 	return errors.New(errs.String())
 }
 
-func (gce *GCEClient) updateMasterInplace(oldMachine *clusterv1.Machine, newMachine *clusterv1.Machine) error {
+func (gce *GCEClient) updateMasterInplace(cluster *clusterv1.Cluster, oldMachine *clusterv1.Machine, newMachine *clusterv1.Machine) error {
 	if oldMachine.Spec.Versions.ControlPlane != newMachine.Spec.Versions.ControlPlane {
 		// First pull off the latest kubeadm.
 		cmd := "export KUBEADM_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt); " +
 			"curl -sSL https://dl.k8s.io/release/${KUBEADM_VERSION}/bin/linux/amd64/kubeadm | sudo tee /usr/bin/kubeadm > /dev/null; " +
 			"sudo chmod a+rx /usr/bin/kubeadm"
-		_, err := gce.remoteSshCommand(newMachine, cmd)
+		_, err := gce.remoteSshCommand(cluster, newMachine, cmd)
 		if err != nil {
 			glog.Infof("remotesshcomand error: %v", err)
 			return err
@@ -674,7 +712,7 @@ func (gce *GCEClient) updateMasterInplace(oldMachine *clusterv1.Machine, newMach
 		// TODO: We might want to upgrade kubeadm if the target control plane version is newer.
 		// Upgrade control plan.
 		cmd = fmt.Sprintf("sudo kubeadm upgrade apply %s -y", "v"+newMachine.Spec.Versions.ControlPlane)
-		_, err = gce.remoteSshCommand(newMachine, cmd)
+		_, err = gce.remoteSshCommand(cluster, newMachine, cmd)
 		if err != nil {
 			glog.Infof("remotesshcomand error: %v", err)
 			return err
@@ -685,16 +723,16 @@ func (gce *GCEClient) updateMasterInplace(oldMachine *clusterv1.Machine, newMach
 	if oldMachine.Spec.Versions.Kubelet != newMachine.Spec.Versions.Kubelet {
 		cmd := fmt.Sprintf("sudo kubectl drain %s --kubeconfig /etc/kubernetes/admin.conf --ignore-daemonsets", newMachine.Name)
 		// The errors are intentionally ignored as master has static pods.
-		gce.remoteSshCommand(newMachine, cmd)
+		gce.remoteSshCommand(cluster, newMachine, cmd)
 		// Upgrade kubelet to desired version.
 		cmd = fmt.Sprintf("sudo apt-get install kubelet=%s", newMachine.Spec.Versions.Kubelet+"-00")
-		_, err := gce.remoteSshCommand(newMachine, cmd)
+		_, err := gce.remoteSshCommand(cluster, newMachine, cmd)
 		if err != nil {
 			glog.Infof("remotesshcomand error: %v", err)
 			return err
 		}
 		cmd = fmt.Sprintf("sudo kubectl uncordon %s --kubeconfig /etc/kubernetes/admin.conf", newMachine.Name)
-		_, err = gce.remoteSshCommand(newMachine, cmd)
+		_, err = gce.remoteSshCommand(cluster, newMachine, cmd)
 		if err != nil {
 			glog.Infof("remotesshcomand error: %v", err)
 			return err
@@ -704,7 +742,7 @@ func (gce *GCEClient) updateMasterInplace(oldMachine *clusterv1.Machine, newMach
 	return nil
 }
 
-func (gce *GCEClient) validateMachine(machine *clusterv1.Machine, config *gceconfigv1.GCEProviderConfig) *apierrors.MachineError {
+func (gce *GCEClient) validateMachine(machine *clusterv1.Machine, config *gceconfigv1.GCEMachineProviderConfig) *apierrors.MachineError {
 	if machine.Spec.Versions.Kubelet == "" {
 		return apierrors.InvalidMachineConfiguration("spec.versions.kubelet can't be empty")
 	}

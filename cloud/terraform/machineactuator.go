@@ -343,7 +343,7 @@ func runTerraformCmd(stdout bool, workingDir string, arg ...string) (bytes.Buffe
 	return out, nil
 }
 
-func (tf *TerraformClient) Delete(machine *clusterv1.Machine) error {
+func (tf *TerraformClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
 	glog.Infof("TERRAFORM DELETE.\n")
 	return nil
 }
@@ -464,7 +464,7 @@ func (tf *TerraformClient) remoteSshCommand(m *clusterv1.Machine, cmd, privateKe
 	return strings.TrimSpace(parts[1]), nil
 }
 
-func (tf *TerraformClient) Exists(machine *clusterv1.Machine) (bool, error) {
+func (tf *TerraformClient) Exists(cluster *clusterv1.Cluster, machine *clusterv1.Machine) (bool, error) {
 	i, err := tf.instanceIfExists(machine)
 	if err != nil {
 		return false, err
