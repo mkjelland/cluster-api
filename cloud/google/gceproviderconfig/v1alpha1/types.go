@@ -21,13 +21,20 @@ import (
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type GCEProviderConfig struct {
+type GCEMachineProviderConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
-	Project     string `json:"project"`
 	Zone        string `json:"zone"`
 	MachineType string `json:"machineType"`
 
 	// The name of the OS to be installed on the machine.
 	OS string `json:"os"`
+}
+
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type GCEClusterProviderConfig struct {
+	metav1.TypeMeta `json:",inline"`
+
+	Project     string `json:"project"`
 }
