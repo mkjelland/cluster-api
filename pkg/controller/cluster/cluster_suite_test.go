@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
 	"sigs.k8s.io/cluster-api/pkg/openapi"
 	"sigs.k8s.io/cluster-api/pkg/controller/sharedinformers"
+	"k8s.io/client-go/rest"
 )
 
 func TestCluster(t *testing.T) {
@@ -34,15 +35,21 @@ func TestCluster(t *testing.T) {
 	config := testenv.Start(apis.GetAllApiBuilders(), openapi.GetOpenAPIDefinitions)
 	cs := clientset.NewForConfigOrDie(config)
 
-	shutdown := make(chan struct{})
-	si := sharedinformers.NewSharedInformers(config, shutdown)
-	controller := NewClusterController(config, si)
-	controller.Run(shutdown)
-
 	t.Run("clusterControllerReconcile", func(t *testing.T) {
+		controller, shutdown := getController(config)
+		defer close(shutdown)
 		clusterControllerReconcile(t, cs, controller)
 	})
 
-	close(shutdown)
 	testenv.Stop()
+}
+
+func getController(config *rest.Config) (*ClusterController, chan struct{}) {
+	shutdown := make(chan struct{})
+	si := sharedinformers.NewSharedInformers(config, shutdown)
+	actuator := NewTestActuator()
+	controller := NewClusterController(config, si, actuator)
+	controller.RunAsync(shutdown)
+
+	return controller, shutdown
 }
