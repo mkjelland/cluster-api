@@ -19,8 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	"reflect"
-
 	"github.com/ghodss/yaml"
 )
 
@@ -63,6 +61,7 @@ type Metadata struct {
 }
 
 type ConfigParams struct {
+	Project       string
 }
 
 func NewConfigWatch(path string) (*ConfigWatch, error) {
@@ -123,15 +122,7 @@ func (vc *ValidConfigs) matchClusterSetupConfig(params *ConfigParams) (*config, 
 	matchingConfigs := make([]config, 0)
 	for _, conf := range vc.configList.Items {
 		for _, validParams := range conf.Params {
-			if params.OS != validParams.OS {
-				continue
-			}
-			validRoles := rolesToMap(validParams.Roles)
-			paramRoles := rolesToMap(params.Roles)
-			if !reflect.DeepEqual(paramRoles, validRoles) {
-				continue
-			}
-			if params.Versions != validParams.Versions {
+			if params.Project != validParams.Project {
 				continue
 			}
 			matchingConfigs = append(matchingConfigs, conf)

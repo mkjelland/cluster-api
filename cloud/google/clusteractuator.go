@@ -16,17 +16,45 @@ package google
 import (
 	"fmt"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
+	client "sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset/typed/cluster/v1alpha1"
+	"sigs.k8s.io/cluster-api/cloud/google/clustersetup"
 )
 
 type GCEClusterClient struct {
+	computeService           GCEClientComputeService
+	clusterClient            client.ClusterInterface
+	clusterSetupConfigGetter GCEClientClusterSetupConfigGetter
 }
 
-func NewClusterActuator() (*GCEClusterClient, error) {
+type GCEClientClusterSetupConfigGetter interface {
+	GetClusterSetupConfig() (clustersetup.ClusterSetupConfig, error)
+}
+
+type ClusterActuatorParams struct {
+	ComputeService           GCEClientComputeService
+	KubeadmToken             string
+	ClusterClient            client.ClusterInterface
+	ClusterSetupConfigGetter GCEClientClusterSetupConfigGetter
+}
+
+func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error) {
+	computeService := params.ComputeService
+	if computeService == nil {
+		var err error
+		computeService, err = newComputeService()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &GCEClusterClient{
+		computeService:         computeService,
+		clusterClient:            params.ClusterClient,
+		clusterSetupConfigGetter: params.ClusterSetupConfigGetter,
 	}, nil
 }
 
-func (gce *GCEClusterClient) Create(cluster *clusterv1.Cluster, initialMachines []*clusterv1.Machine) error {
+func (gce *GCEClusterClient) Create(cluster *clusterv1.Cluster, master *clusterv1.Machine) error {
 	return fmt.Errorf("NYI: Cluster Creations are not yet supported")
 }
 

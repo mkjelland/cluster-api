@@ -37,6 +37,8 @@ import (
 	"sigs.k8s.io/cluster-api/cloud/google"
 	"sigs.k8s.io/cluster-api/pkg/controller/sharedinformers"
 	"sigs.k8s.io/cluster-api/pkg/controller/cluster"
+	"sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
+	"sigs.k8s.io/cluster-api/cloud/google/clustersetup"
 )
 
 const (
@@ -49,7 +51,21 @@ func StartClusterController(server *options.ClusterControllerServer, shutdown <-
 		glog.Fatalf("Could not create Config for talking to the apiserver: %v", err)
 	}
 
-	actuator, err := google.NewClusterActuator()
+	client, err := clientset.NewForConfig(config)
+	if err != nil {
+		glog.Fatalf("Could not create client for talking to the apiserver: %v", err)
+	}
+
+	configWatch, err := clustersetup.NewConfigWatch(server.ClusterSetupConfigsPath)
+	if err != nil {
+		glog.Fatalf("Could not create config watch: %v", err)
+	}
+	params := google.ClusterActuatorParams{
+		KubeadmToken:             server.KubeadmToken,
+		ClusterClient:            client.ClusterV1alpha1().Clusters(corev1.NamespaceDefault),
+		ClusterSetupConfigGetter: configWatch,
+	}
+	actuator, err := google.NewClusterActuator(params)
 	if err != nil {
 		glog.Fatalf("Could not create Google cluster actuator: %v", err)
 	}

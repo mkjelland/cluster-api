@@ -24,7 +24,7 @@ import (
 // methods should be idempotent unless otherwise specified.
 type Actuator interface {
 	// Create the cluster.
-	Create(*clusterv1.Cluster, []*clusterv1.Machine) error
+	Create(*clusterv1.Cluster, *clusterv1.Machine) error
 	// Delete the cluster.
 	Delete(*clusterv1.Cluster) error
 	// Update the cluster to the provided definition.
