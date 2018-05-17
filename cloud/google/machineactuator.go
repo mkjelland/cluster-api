@@ -103,13 +103,9 @@ const (
 )
 
 func NewMachineActuator(params MachineActuatorParams) (*GCEClient, error) {
-	computeService := params.ComputeService
-	if computeService == nil {
-		var err error
-		computeService, err = newComputeService()
-		if err != nil {
-			return nil, err
-		}
+	computeService, err := getOrNewComputeService(params)
+	if err != nil {
+		return nil, err
 	}
 
 	scheme, err := gceconfigv1.NewScheme()
@@ -817,7 +813,10 @@ func getSubnet(netRange clusterv1.NetworkRanges) string {
 	return netRange.CIDRBlocks[0]
 }
 
-func newComputeService() (GCEClientComputeService, error) {
+func getOrNewComputeService(params MachineActuatorParams) (GCEClientComputeService, error) {
+	if params.ComputeService != nil {
+		return params.ComputeService, nil
+	}
 	// The default GCP client expects the environment variable
 	// GOOGLE_APPLICATION_CREDENTIALS to point to a file with service credentials.
 	client, err := google.DefaultClient(context.TODO(), compute.ComputeScope)
