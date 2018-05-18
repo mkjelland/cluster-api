@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package machine
+package cluster
 
 import (
 	"sync"
@@ -49,7 +49,7 @@ func (a *TestActuator) Create(*v1alpha1.Cluster, *v1alpha1.Machine) error {
 	return nil
 }
 
-func (a *TestActuator) Delete(*v1alpha1.Cluster, *v1alpha1.Machine) error {
+func (a *TestActuator) Delete(*v1alpha1.Cluster) error {
 	defer func() {
 		if a.BlockOnDelete {
 			<-a.unblock
@@ -62,7 +62,7 @@ func (a *TestActuator) Delete(*v1alpha1.Cluster, *v1alpha1.Machine) error {
 	return nil
 }
 
-func (a *TestActuator) Update(c *v1alpha1.Cluster, machine *v1alpha1.Machine) error {
+func (a *TestActuator) Update(c *v1alpha1.Cluster) error {
 	defer func() {
 		if a.BlockOnUpdate {
 			<-a.unblock
@@ -75,7 +75,7 @@ func (a *TestActuator) Update(c *v1alpha1.Cluster, machine *v1alpha1.Machine) er
 	return nil
 }
 
-func (a *TestActuator) Exists(*v1alpha1.Cluster, *v1alpha1.Machine) (bool, error) {
+func (a *TestActuator) Exists(*v1alpha1.Cluster) (bool, error) {
 	defer func() {
 		if a.BlockOnExists {
 			<-a.unblock

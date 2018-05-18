@@ -23,7 +23,7 @@ import (
 // Actuator controls clusters on a specific infrastructure. All
 // methods should be idempotent unless otherwise specified.
 type Actuator interface {
-	// Create the cluster.
+	// Create the cluster, including the master machine
 	Create(*clusterv1.Cluster, *clusterv1.Machine) error
 	// Delete the cluster.
 	Delete(*clusterv1.Cluster) error

@@ -31,6 +31,7 @@ import (
 	"github.com/golang/glog"
 	"sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/cluster-api/util"
 )
 
 // +controller:group=cluster,version=v1alpha1,kind=Cluster,resource=clusters
@@ -53,24 +54,45 @@ func (c *ClusterControllerImpl) Init(arguments sharedinformers.ControllerInitArg
 	c.lister = arguments.GetSharedInformers().Factory.Cluster().V1alpha1().Clusters().Lister()
 	c.actuator = actuator
 
-	clientset, err := clientset.NewForConfig(arguments.GetRestConfig())
+	cs, err := clientset.NewForConfig(arguments.GetRestConfig())
 	if err != nil {
 		glog.Fatalf("error creating cluster client: %v", err)
 	}
-	c.clientSet = clientset
+	c.clientSet = cs
 	c.kubernetesClientSet = arguments.GetSharedInformers().KubernetesClientSet
 
 	// Create cluster actuator.
 	// TODO: Assume default namespace for now. Maybe a separate a controller per namespace?
-	c.clusterClient = clientset.ClusterV1alpha1().Clusters(corev1.NamespaceDefault)
+	c.clusterClient = cs.ClusterV1alpha1().Clusters(corev1.NamespaceDefault)
 	c.actuator = actuator
 }
 
-// Reconcile handles enqueued messages
+// Reconcile handles enqueued messages. The delete will be handled by finalizer.
 func (c *ClusterControllerImpl) Reconcile(cluster *clusterv1.Cluster) error {
-	// Implement controller logic here
 	name := cluster.Name
 	log.Printf("Running reconcile Cluster for %s\n", name)
+
+	if !cluster.ObjectMeta.DeletionTimestamp.IsZero() {
+		// no-op if finalizer has been removed.
+		if !util.Contains(cluster.ObjectMeta.Finalizers, clusterv1.ClusterFinalizer) {
+			glog.Infof("reconciling cluster object %v causes a no-op as there is no finalizer.", name)
+			return nil
+		}
+
+		glog.Infof("reconciling cluster object %v triggers delete.", name)
+		if err := c.actuator.Delete(cluster); err != nil {
+			glog.Errorf("Error deleting cluster object %v; %v", name, err)
+			return err
+		}
+		// Remove finalizer on successful deletion.
+		glog.Infof("cluster object %v deletion successful, removing finalizer.", name)
+		cluster.ObjectMeta.Finalizers = util.Filter(cluster.ObjectMeta.Finalizers, clusterv1.ClusterFinalizer)
+		if _, err := c.clusterClient.Update(cluster); err != nil {
+			glog.Errorf("Error removing finalizer from cluster object %v; %v", name, err)
+			return err
+		}
+		return nil
+	}
 
 	exist, err := c.actuator.Exists(cluster)
 	if err != nil {
@@ -81,16 +103,10 @@ func (c *ClusterControllerImpl) Reconcile(cluster *clusterv1.Cluster) error {
 		glog.Infof("reconciling cluster object %v triggers idempotent update.", name)
 		return c.actuator.Update(cluster)
 	}
-	// Machine resource created. Machine does not yet exist.
+	// Cluster resource created. Cluster does not yet exist.
 	glog.Infof("reconciling cluster object %v triggers idempotent create.", cluster.ObjectMeta.Name)
-	return c.create(cluster, nil)
-	return nil
+	return c.actuator.Create(cluster, nil)
 }
-
-func (c *ClusterControllerImpl) create(cluster *clusterv1.Cluster, master *clusterv1.Machine) error {
-	return c.actuator.Create(cluster, master)
-}
-
 
 func (c *ClusterControllerImpl) Get(namespace, name string) (*clusterv1.Cluster, error) {
 	return c.lister.Clusters(namespace).Get(name)
