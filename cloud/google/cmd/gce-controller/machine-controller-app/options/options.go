@@ -17,7 +17,6 @@ limitations under the License.
 package options
 
 import (
-	"github.com/spf13/pflag"
 	"sigs.k8s.io/cluster-api/pkg/controller/config"
 )
 
@@ -27,16 +26,11 @@ type MachineControllerServer struct {
 	MachineSetupConfigsPath string
 }
 
-func NewMachineControllerServer() *MachineControllerServer {
+func NewMachineControllerServer(kubeadmToken string, machineSetupConfigsPath string) *MachineControllerServer {
 	s := MachineControllerServer{
 		CommonConfig: &config.ControllerConfig,
+		KubeadmToken: kubeadmToken,
+		MachineSetupConfigsPath: machineSetupConfigsPath,
 	}
 	return &s
-}
-
-func (s *MachineControllerServer) AddFlags(fs *pflag.FlagSet) {
-	fs.StringVar(&s.KubeadmToken, "token", s.KubeadmToken, "Kubeadm token to use to join new machines")
-	fs.StringVar(&s.MachineSetupConfigsPath, "machinesetup", s.MachineSetupConfigsPath, "path to machine setup configs file")
-
-	config.ControllerConfig.AddFlags(pflag.CommandLine)
 }

@@ -102,7 +102,7 @@ const (
 )
 
 func NewMachineActuator(params MachineActuatorParams) (*GCEClient, error) {
-	computeService, err := getOrNewComputeService(params)
+	computeService, err := getOrNewComputeServiceForMachine(params)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 					},
 				},
 			},
-			Disks: newDisks(machineConfig, zone, imagePath, int64(30)),
+			Disks:    newDisks(machineConfig, zone, imagePath, int64(30)),
 			Metadata: metadata,
 			Tags: &compute.Tags{
 				Items: []string{
@@ -753,8 +753,8 @@ func newDisks(config *gceconfigv1.GCEMachineProviderConfig, zone string, imagePa
 		d := compute.AttachedDisk{
 			AutoDelete: true,
 			InitializeParams: &compute.AttachedDiskInitializeParams{
-				DiskSizeGb:  diskSizeGb,
-				DiskType:    fmt.Sprintf("zones/%s/diskTypes/%s", zone, disk.InitializeParams.DiskType),
+				DiskSizeGb: diskSizeGb,
+				DiskType:   fmt.Sprintf("zones/%s/diskTypes/%s", zone, disk.InitializeParams.DiskType),
 			},
 		}
 		if idx == 0 {
@@ -778,7 +778,7 @@ func getSubnet(netRange clusterv1.NetworkRanges) string {
 	return netRange.CIDRBlocks[0]
 }
 
-func getOrNewComputeService(params MachineActuatorParams) (GCEClientComputeService, error) {
+func getOrNewComputeServiceForMachine(params MachineActuatorParams) (GCEClientComputeService, error) {
 	if params.ComputeService != nil {
 		return params.ComputeService, nil
 	}
