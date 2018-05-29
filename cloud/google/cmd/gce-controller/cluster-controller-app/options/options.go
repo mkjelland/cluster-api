@@ -14,27 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package options
 
 import (
-	"github.com/golang/glog"
 	"github.com/spf13/pflag"
-	"k8s.io/apiserver/pkg/util/logs"
-	"sigs.k8s.io/cluster-api/cloud/google/cmd/gce-machine-controller/app"
-	"sigs.k8s.io/cluster-api/cloud/google/cmd/gce-machine-controller/app/options"
+	"sigs.k8s.io/cluster-api/pkg/controller/config"
 )
 
-func main() {
+type ClusterControllerServer struct {
+	CommonConfig            *config.Configuration
+}
 
-	s := options.NewMachineControllerServer()
-	s.AddFlags(pflag.CommandLine)
-
-	pflag.Parse()
-
-	logs.InitLogs()
-	defer logs.FlushLogs()
-
-	if err := app.Run(s); err != nil {
-		glog.Errorf("Failed to start machine controller. Err: %v", err)
+func NewClusterControllerServer() *ClusterControllerServer {
+	s := ClusterControllerServer{
+		CommonConfig: &config.ControllerConfig,
 	}
+	return &s
+}
+
+func (s *ClusterControllerServer) AddFlags(fs *pflag.FlagSet) {
 }
