@@ -18,12 +18,34 @@ package options
 
 import (
 	"github.com/spf13/pflag"
-	"sigs.k8s.io/cluster-api/pkg/controller/config"
+	"k8s.io/apiserver/pkg/util/logs"
+	"sigs.k8s.io/cluster-api/cloud/google/cmd/gce-machine-controller/app"
+	"sigs.k8s.io/cluster-api/cloud/google/cmd/gce-machine-controller/app/options"
+	"flag"
 )
 
 type ClusterControllerServer struct {
 	CommonConfig            *config.Configuration
 }
+=======
+	"k8s.io/apiserver/pkg/util/logs"
+	"sigs.k8s.io/cluster-api/cloud/google/cmd/gce-machine-controller/app"
+	"sigs.k8s.io/cluster-api/cloud/google/cmd/gce-machine-controller/app/options"
+	"flag"
+)
+
+func main() {
+
+	s := options.NewMachineControllerServer()
+	s.AddFlags(pflag.CommandLine)
+
+	pflag.Parse()
+	// the following line exists to make glog happy, for more information, see: https://github.com/kubernetes/kubernetes/issues/17162
+	flag.CommandLine.Parse([]string{})
+
+	logs.InitLogs()
+	defer logs.FlushLogs()
+>>>>>>> 851a4b40eedd60ffaab6ab25d5ba40412523e4e7:cloud/google/cmd/gce-machine-controller/main.go
 
 func NewClusterControllerServer() *ClusterControllerServer {
 	s := ClusterControllerServer{
