@@ -148,7 +148,11 @@ func (gce *GCEClient) CreateMachineController(cluster *clusterv1.Cluster, initia
 	if gce.machineSetupConfigGetter == nil {
 		return errors.New("a valid machineSetupConfigGetter is required")
 	}
-	if err := gce.CreateMachineControllerServiceAccount(cluster, initialMachines); err != nil {
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
+	if err != nil {
+		return err
+	}
+	if err := CreateMachineControllerServiceAccount(cluster, clusterConfig.Project); err != nil {
 		return err
 	}
 
@@ -187,12 +191,17 @@ func (gce *GCEClient) CreateMachineController(cluster *clusterv1.Cluster, initia
 }
 
 func (gce *GCEClient) ProvisionClusterDependencies(cluster *clusterv1.Cluster, initialMachines []*clusterv1.Machine) error {
-	err := gce.CreateWorkerNodeServiceAccount(cluster, initialMachines)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return err
 	}
 
-	return gce.CreateMasterNodeServiceAccount(cluster, initialMachines)
+	err = CreateWorkerNodeServiceAccount(cluster, clusterConfig.Project)
+	if err != nil {
+		return err
+	}
+
+	return CreateMasterNodeServiceAccount(cluster, clusterConfig.Project)
 }
 
 func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
@@ -204,7 +213,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		return gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
 			"Cannot unmarshal machine's providerConfig field: %v", err))
 	}
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
 			"Cannot unmarshal cluster's providerConfig field: %v", err))
@@ -273,7 +282,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 			Labels: labels,
 			ServiceAccounts: []*compute.ServiceAccount{
 				{
-					Email: gce.GetDefaultServiceAccountForMachine(cluster, machine),
+					Email: GetDefaultServiceAccountForMachine(cluster, machine),
 					Scopes: []string{
 						compute.CloudPlatformScope,
 					},
@@ -319,7 +328,7 @@ func (gce *GCEClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err))
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return gce.handleMachineError(machine,
 			apierrors.InvalidMachineConfiguration("Cannot unmarshal cluster's providerConfig field: %v", err))
@@ -368,15 +377,15 @@ func (gce *GCEClient) PostCreate(cluster *clusterv1.Cluster, machines []*cluster
 		return fmt.Errorf("error creating default storage class: %v", err)
 	}
 
-	err = gce.CreateIngressControllerServiceAccount(cluster, machines)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
+	if err != nil {
+		return fmt.Errorf("Cannot unmarshal cluster's providerConfig field: %v", err)
+	}
+	err = CreateIngressControllerServiceAccount(cluster, clusterConfig.Project)
 	if err != nil {
 		return fmt.Errorf("error creating service account for ingress controller: %v", err)
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
-	if err != nil {
-		return fmt.Errorf("Cannot unmarshal cluster's providerConfig field: %v", err)
-	}
 	err = CreateIngressController(clusterConfig.Project, cluster.Name)
 	if err != nil {
 		return fmt.Errorf("error creating ingress controller: %v", err)
@@ -386,16 +395,14 @@ func (gce *GCEClient) PostCreate(cluster *clusterv1.Cluster, machines []*cluster
 }
 
 func (gce *GCEClient) PostDelete(cluster *clusterv1.Cluster, machines []*clusterv1.Machine) error {
-	if err := gce.DeleteMasterNodeServiceAccount(cluster, machines); err != nil {
-		return fmt.Errorf("error deleting master node service account: %v", err)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
+	if err != nil {
+		return fmt.Errorf("Cannot unmarshal cluster's providerConfig field: %v", err)
 	}
-	if err := gce.DeleteWorkerNodeServiceAccount(cluster, machines); err != nil {
-		return fmt.Errorf("error deleting worker node service account: %v", err)
-	}
-	if err := gce.DeleteIngressControllerServiceAccount(cluster, machines); err != nil {
+	if err := DeleteIngressControllerServiceAccount(cluster, clusterConfig.Project); err != nil {
 		return fmt.Errorf("error deleting ingress controller service account: %v", err)
 	}
-	if err := gce.DeleteMachineControllerServiceAccount(cluster, machines); err != nil {
+	if err := DeleteMachineControllerServiceAccount(cluster, clusterConfig.Project); err != nil {
 		return fmt.Errorf("error deleting machine controller service account: %v", err)
 	}
 	return nil
@@ -475,7 +482,7 @@ func (gce *GCEClient) GetIP(cluster *clusterv1.Cluster, machine *clusterv1.Machi
 		return "", err
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return "", err
 	}
@@ -503,7 +510,7 @@ func (gce *GCEClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clusterv
 		return "", err
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return "", err
 	}
@@ -524,7 +531,7 @@ func (gce *GCEClient) updateAnnotations(cluster *clusterv1.Cluster, machine *clu
 			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err))
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	project := clusterConfig.Project
 	if err != nil {
 		return gce.handleMachineError(machine,
@@ -576,7 +583,7 @@ func (gce *GCEClient) instanceIfExists(cluster *clusterv1.Cluster, machine *clus
 		return nil, err
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return nil, err
 	}
@@ -595,15 +602,6 @@ func (gce *GCEClient) instanceIfExists(cluster *clusterv1.Cluster, machine *clus
 
 func (gce *GCEClient) machineproviderconfig(providerConfig clusterv1.ProviderConfig) (*gceconfigv1.GCEMachineProviderConfig, error) {
 	var config gceconfigv1.GCEMachineProviderConfig
-	err := gce.gceProviderConfigCodec.DecodeFromProviderConfig(providerConfig, &config)
-	if err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
-func (gce *GCEClient) clusterproviderconfig(providerConfig clusterv1.ProviderConfig) (*gceconfigv1.GCEClusterProviderConfig, error) {
-	var config gceconfigv1.GCEClusterProviderConfig
 	err := gce.gceProviderConfigCodec.DecodeFromProviderConfig(providerConfig, &config)
 	if err != nil {
 		return nil, err

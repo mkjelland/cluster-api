@@ -21,11 +21,13 @@ import (
 	"sigs.k8s.io/cluster-api/cloud/google/clients"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 	client "sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset/typed/cluster/v1alpha1"
+	gceconfigv1 "sigs.k8s.io/cluster-api/cloud/google/gceproviderconfig/v1alpha1"
 )
 
 type GCEClusterClient struct {
 	computeService GCEClientComputeService
 	clusterClient  client.ClusterInterface
+	gceProviderConfigCodec   *gceconfigv1.GCEProviderConfigCodec
 }
 
 type ClusterActuatorParams struct {
@@ -39,18 +41,50 @@ func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error)
 		return nil, err
 	}
 
+	codec, err := gceconfigv1.NewCodec()
+	if err != nil {
+		return nil, err
+	}
+
 	return &GCEClusterClient{
 		computeService: computeService,
 		clusterClient:  params.ClusterClient,
+		gceProviderConfigCodec: codec,
 	}, nil
 }
 
 func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
-	return fmt.Errorf("NYI: Cluster Reconciles are not yet supported")
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
+	if err != nil {
+		return err
+	}
+	if GetMasterServiceAccount(cluster) == "" {
+		err = CreateMasterNodeServiceAccount(cluster, clusterConfig.Project)
+		if err != nil {
+			return err
+		}
+	}
+	if GetWorkerServiceAccount(cluster) == "" {
+		err = CreateWorkerNodeServiceAccount(cluster, clusterConfig.Project)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (gce *GCEClusterClient) Delete(cluster *clusterv1.Cluster) error {
-	return fmt.Errorf("NYI: Cluster Deletions are not yet supported")
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
+	if err != nil {
+		return fmt.Errorf("Cannot unmarshal cluster's providerConfig field: %v", err)
+	}
+	if err := DeleteMasterNodeServiceAccount(cluster, clusterConfig.Project); err != nil {
+		return fmt.Errorf("error deleting master node service account: %v", err)
+	}
+	if err := DeleteWorkerNodeServiceAccount(cluster, clusterConfig.Project); err != nil {
+		return fmt.Errorf("error deleting worker node service account: %v", err)
+	}
+	return nil
 }
 
 func getOrNewComputeServiceForCluster(params ClusterActuatorParams) (GCEClientComputeService, error) {
@@ -68,4 +102,13 @@ func getOrNewComputeServiceForCluster(params ClusterActuatorParams) (GCEClientCo
 		return nil, err
 	}
 	return computeService, nil
+}
+
+func ClusterProviderConfig(providerConfig clusterv1.ProviderConfig, codec *gceconfigv1.GCEProviderConfigCodec,) (*gceconfigv1.GCEClusterProviderConfig, error) {
+	var config gceconfigv1.GCEClusterProviderConfig
+	err := codec.DecodeFromProviderConfig(providerConfig, &config)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
 }

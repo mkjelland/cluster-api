@@ -57,6 +57,10 @@ func (d *deployer) createCluster(c *clusterv1.Cluster, machines []*clusterv1.Mac
 
 	glog.Infof("Starting cluster dependency creation %s", c.GetName())
 
+	if err := d.clusterDeployer.Reconcile(c); err != nil {
+		return err
+	}
+
 	if err := d.machineDeployer.ProvisionClusterDependencies(c, machines); err != nil {
 		return err
 	}

@@ -76,7 +76,7 @@ func (gce *GCEClient) setupSSHAccess(cluster *clusterv1.Cluster, machine *cluste
 		return err
 	}
 
-	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	clusterConfig, err := ClusterProviderConfig(cluster.Spec.ProviderConfig, gce.gceProviderConfigCodec)
 	if err != nil {
 		return err
 	}

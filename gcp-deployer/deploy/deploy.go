@@ -138,6 +138,9 @@ func (d *deployer) DeleteCluster() error {
 	if err := d.machineDeployer.PostDelete(cluster, machines); err != nil {
 		return err
 	}
+	if err := d.clusterDeployer.Delete(cluster); err != nil {
+		return err
+	}
 	glog.Infof("Deletion complete")
 	return nil
 }
