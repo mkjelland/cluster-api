@@ -98,7 +98,7 @@ type ClusterStatus struct {
 	// It is recommended that providers maintain their
 	// own versioned API types that should be
 	// serialized/deserialized from this field.
-	ProviderStatus *runtime.RawExtension `json:"providerStatus"`
+	ProviderStatus ProviderStatus `json:"providerStatus"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.

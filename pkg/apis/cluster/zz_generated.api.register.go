@@ -150,7 +150,7 @@ type MachineStatus struct {
 	Versions       *MachineVersionInfo
 	ErrorReason    *clustercommon.MachineStatusError
 	ErrorMessage   *string
-	ProviderStatus *pkgruntime.RawExtension
+	ProviderStatus ProviderStatus
 }
 
 type MachineSpec struct {
@@ -172,6 +172,11 @@ type ProviderConfig struct {
 	ValueFrom *ProviderConfigSource
 }
 
+type ProviderStatus struct {
+	Value     *pkgruntime.RawExtension
+	ValueFrom *ProviderStatusSource
+}
+
 type MachineDeploymentSpec struct {
 	Replicas                *int32
 	Selector                metav1.LabelSelector
@@ -184,6 +189,9 @@ type MachineDeploymentSpec struct {
 }
 
 type ProviderConfigSource struct {
+}
+
+type ProviderStatusSource struct {
 }
 
 type MachineDeploymentStrategy struct {
@@ -227,7 +235,7 @@ type ClusterStatus struct {
 	APIEndpoints   []APIEndpoint
 	ErrorReason    clustercommon.ClusterStatusError
 	ErrorMessage   string
-	ProviderStatus *pkgruntime.RawExtension
+	ProviderStatus ProviderStatus
 }
 
 type MachineSetStatus struct {

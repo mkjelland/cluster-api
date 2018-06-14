@@ -30,8 +30,6 @@ const (
 
 	IngressControllerSecret = "glbc-gcp-key"
 	MachineControllerSecret = "machine-controller-credential"
-
-	ClusterAnnotationPrefix = "gce.clusterapi.k8s.io/service-account-"
 )
 
 var (
@@ -60,10 +58,15 @@ var (
 // Returns the email address of the service account that should be used
 // as the default service account for this machine
 func (gce *GCEClient) GetDefaultServiceAccountForMachine(cluster *clusterv1.Cluster, machine *clusterv1.Machine) string {
+	status, err := gce.clusterproviderstatus(cluster.Status.ProviderStatus)
+	if err != nil {
+		glog.Info(fmt.Errorf("cannot parse cluster providerStatus field: %v"), err)
+		return ""
+	}
 	if util.IsMaster(machine) {
-		return cluster.ObjectMeta.Annotations[ClusterAnnotationPrefix+MasterNodeServiceAccountPrefix]
+		return status.ServiceAccounts[MasterNodeServiceAccountPrefix]
 	} else {
-		return cluster.ObjectMeta.Annotations[ClusterAnnotationPrefix+WorkerNodeServiceAccountPrefix]
+		return status.ServiceAccounts[WorkerNodeServiceAccountPrefix]
 	}
 }
 
@@ -153,10 +156,7 @@ func (gce *GCEClient) createServiceAccount(serviceAccountPrefix string, roles []
 		}
 	}
 
-	if cluster.ObjectMeta.Annotations == nil {
-		cluster.ObjectMeta.Annotations = make(map[string]string)
-	}
-	cluster.ObjectMeta.Annotations[ClusterAnnotationPrefix+serviceAccountPrefix] = email
+	gce.updateClusterProviderStatus(cluster, serviceAccountPrefix, email)
 
 	return accountId, config.Project, nil
 }
@@ -177,6 +177,20 @@ func (gce *GCEClient) DeleteMachineControllerServiceAccount(cluster *clusterv1.C
 	return gce.deleteServiceAccount(MachineControllerServiceAccountPrefix, MachineControllerRoles, cluster, machines)
 }
 
+func (gce *GCEClient) updateClusterProviderStatus(cluster *clusterv1.Cluster, serviceAccountPrefix string, email string) error {
+	status, err := gce.clusterproviderstatus(cluster.Status.ProviderStatus)
+	if err != nil {
+		return fmt.Errorf("cannot parse cluster providerStatus field: %v", err)
+	}
+	if status.ServiceAccounts == nil {
+		status.ServiceAccounts = map[string]string{}
+	}
+	status.ServiceAccounts[serviceAccountPrefix] = email
+	newStatus, err := gce.gceProviderStatusCodec.EncodeToProviderStatus(status)
+	cluster.Status.ProviderStatus = *newStatus
+	return nil
+}
+
 func (gce *GCEClient) deleteServiceAccount(serviceAccountPrefix string, roles []string, cluster *clusterv1.Cluster, machines []*clusterv1.Machine) error {
 	if len(machines) == 0 {
 		glog.Info("machine count is zero, cannot determine project for service a/c deletion")
@@ -190,9 +204,12 @@ func (gce *GCEClient) deleteServiceAccount(serviceAccountPrefix string, roles []
 	}
 
 	var email string
-	if cluster.ObjectMeta.Annotations != nil {
-		email = cluster.ObjectMeta.Annotations[ClusterAnnotationPrefix+serviceAccountPrefix]
+	status, err := gce.clusterproviderstatus(cluster.Status.ProviderStatus)
+	if err != nil {
+		glog.Info("cannot parse cluster providerStatus field")
+		return nil
 	}
+	email = status.ServiceAccounts[serviceAccountPrefix]
 
 	if email == "" {
 		glog.Info("No service a/c found in cluster.")

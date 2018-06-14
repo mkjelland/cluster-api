@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/cluster-api/cloud/google/clients"
 	gceconfigv1 "sigs.k8s.io/cluster-api/cloud/google/gceproviderconfig/v1alpha1"
+	gcestatusv1 "sigs.k8s.io/cluster-api/cloud/google/gceproviderstatus/v1alpha1"
 	"sigs.k8s.io/cluster-api/cloud/google/machinesetup"
 	apierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/kubeadm"
@@ -88,6 +89,7 @@ type GCEClient struct {
 	certificateAuthority     *cert.CertificateAuthority
 	computeService           GCEClientComputeService
 	gceProviderConfigCodec   *gceconfigv1.GCEProviderConfigCodec
+	gceProviderStatusCodec   *gcestatusv1.GCEProviderStatusCodec
 	kubeadm                  GCEClientKubeadm
 	scheme                   *runtime.Scheme
 	codecFactory             *serializer.CodecFactory
@@ -119,7 +121,12 @@ func NewMachineActuator(params MachineActuatorParams) (*GCEClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	codec, err := gceconfigv1.NewCodec()
+	configCodec, err := gceconfigv1.NewCodec()
+	if err != nil {
+		return nil, err
+	}
+
+	statusCodec, err := gcestatusv1.NewCodec()
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +149,8 @@ func NewMachineActuator(params MachineActuatorParams) (*GCEClient, error) {
 		computeService:         computeService,
 		kubeadm:                getOrNewKubeadm(params),
 		scheme:                 scheme,
-		gceProviderConfigCodec: codec,
+		gceProviderConfigCodec: configCodec,
+		gceProviderStatusCodec: statusCodec,
 		sshCreds: SshCreds{
 			privateKeyPath: privateKeyPath,
 			user:           user,
@@ -613,6 +621,18 @@ func (gce *GCEClient) machineproviderconfig(providerConfig clusterv1.ProviderCon
 func (gce *GCEClient) clusterproviderconfig(providerConfig clusterv1.ProviderConfig) (*gceconfigv1.GCEClusterProviderConfig, error) {
 	var config gceconfigv1.GCEClusterProviderConfig
 	err := gce.gceProviderConfigCodec.DecodeFromProviderConfig(providerConfig, &config)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func (gce *GCEClient) clusterproviderstatus(providerStatus clusterv1.ProviderStatus) (*gcestatusv1.GCEClusterProviderStatus, error) {
+	var config gcestatusv1.GCEClusterProviderStatus
+	if providerStatus.Value == nil {
+		return &gcestatusv1.GCEClusterProviderStatus{}, nil
+	}
+	err := gce.gceProviderStatusCodec.DecodeFromProviderStatus(providerStatus, &config)
 	if err != nil {
 		return nil, err
 	}

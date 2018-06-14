@@ -41,3 +41,27 @@ type ProviderConfig struct {
 type ProviderConfigSource struct {
 	// TODO(roberthbailey): Fill these in later
 }
+
+// ProviderStatus stores state information of the provider specific resources
+type ProviderStatus struct {
+
+	// No more than one of the following may be specified.
+
+	// Value is an inlined, serialized representation of the resource
+	// configuration. It is recommended that providers maintain their own
+	// versioned API types that should be serialized/deserialized from this
+	// field, akin to component config.
+	// +optional
+	Value *runtime.RawExtension `json:"value,omitempty"`
+
+	// Source for the provider status. Cannot be used if value is
+	// not empty.
+	// +optional
+	ValueFrom *ProviderStatusSource `json:valueFrom,omitempty`
+}
+
+// ProviderStatusSource represents a source for the provider-specific
+// state information.
+type ProviderStatusSource struct {
+	// TODO(mkjelland): Fill these in later
+}

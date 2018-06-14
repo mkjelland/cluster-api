@@ -139,7 +139,7 @@ type MachineStatus struct {
 	// It is recommended that providers maintain their
 	// own versioned API types that should be
 	// serialized/deserialized from this field.
-	ProviderStatus *runtime.RawExtension `json:"providerStatus"`
+	ProviderStatus ProviderStatus `json:"providerStatus"`
 }
 
 type MachineVersionInfo struct {
