@@ -60,6 +60,9 @@ const (
 	// This file is a yaml that will be used to create the machine-setup configmap on the machine controller.
 	// It contains the supported machine configurations along with the startup scripts and OS image paths that correspond to each supported configuration.
 	MachineSetupConfigsFilename = "machine_setup_configs.yaml"
+
+	createEventAction = "Create"
+	deleteEventAction = "Delete"
 )
 
 type SshCreds struct {
@@ -203,16 +206,16 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 	machineConfig, err := gce.machineproviderconfig(machine.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
-			"Cannot unmarshal machine's providerConfig field: %v", err))
+			"Cannot unmarshal machine's providerConfig field: %v", err), createEventAction)
 	}
 	clusterConfig, err := gce.gceProviderConfigCodec.ClusterProviderFromProviderConfig(cluster.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
-			"Cannot unmarshal cluster's providerConfig field: %v", err))
+			"Cannot unmarshal cluster's providerConfig field: %v", err), createEventAction)
 	}
 
 	if verr := gce.validateMachine(machine, machineConfig); verr != nil {
-		return gce.handleMachineError(machine, verr)
+		return gce.handleMachineError(machine, verr, createEventAction)
 	}
 
 	configParams := &machinesetup.ConfigParams{
@@ -288,7 +291,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 
 		if err != nil {
 			return gce.handleMachineError(machine, apierrors.CreateMachine(
-				"error creating GCE instance: %v", err))
+				"error creating GCE instance: %v", err), createEventAction)
 		}
 
 		gce.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Created Machine %v", machine.Name)
@@ -296,7 +299,7 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		// If we have a v1Alpha1Client, then annotate the machine so that we
 		// remember exactly what VM we created for it.
 		if gce.v1Alpha1Client != nil {
-			return gce.updateAnnotations(cluster, machine)
+			return gce.updateAnnotations(cluster, machine, createEventAction)
 		}
 	} else {
 		glog.Infof("Skipped creating a VM that already exists.\n")
@@ -319,17 +322,17 @@ func (gce *GCEClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 	machineConfig, err := gce.machineproviderconfig(machine.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(machine,
-			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err))
+			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err),  deleteEventAction)
 	}
 
 	clusterConfig, err := gce.gceProviderConfigCodec.ClusterProviderFromProviderConfig(cluster.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(machine,
-			apierrors.InvalidMachineConfiguration("Cannot unmarshal cluster's providerConfig field: %v", err))
+			apierrors.InvalidMachineConfiguration("Cannot unmarshal cluster's providerConfig field: %v", err), deleteEventAction)
 	}
 
 	if verr := gce.validateMachine(machine, machineConfig); verr != nil {
-		return gce.handleMachineError(machine, verr)
+		return gce.handleMachineError(machine, verr, deleteEventAction)
 	}
 
 	var project, zone, name string
@@ -353,7 +356,7 @@ func (gce *GCEClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 	}
 	if err != nil {
 		return gce.handleMachineError(machine, apierrors.DeleteMachine(
-			"error deleting GCE instance: %v", err))
+			"error deleting GCE instance: %v", err), deleteEventAction)
 	}
 
 	if gce.v1Alpha1Client != nil {
@@ -411,10 +414,10 @@ func (gce *GCEClient) Update(cluster *clusterv1.Cluster, goalMachine *clusterv1.
 	config, err := gce.machineproviderconfig(goalMachine.Spec.ProviderConfig)
 	if err != nil {
 		return gce.handleMachineError(goalMachine,
-			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err))
+			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err), "")
 	}
 	if verr := gce.validateMachine(goalMachine, config); verr != nil {
-		return gce.handleMachineError(goalMachine, verr)
+		return gce.handleMachineError(goalMachine, verr, "")
 	}
 
 	status, err := gce.instanceStatus(goalMachine)
@@ -430,7 +433,7 @@ func (gce *GCEClient) Update(cluster *clusterv1.Cluster, goalMachine *clusterv1.
 		}
 		if instance != nil && instance.Labels[BootstrapLabelKey] != "" {
 			glog.Infof("Populating current state for boostrap machine %v", goalMachine.ObjectMeta.Name)
-			return gce.updateAnnotations(cluster, goalMachine)
+			return gce.updateAnnotations(cluster, goalMachine, "")
 		} else {
 			return fmt.Errorf("Cannot retrieve current state to update machine %v", goalMachine.ObjectMeta.Name)
 		}
@@ -520,20 +523,20 @@ func (gce *GCEClient) GetKubeConfig(cluster *clusterv1.Cluster, master *clusterv
 	return result, nil
 }
 
-func (gce *GCEClient) updateAnnotations(cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
+func (gce *GCEClient) updateAnnotations(cluster *clusterv1.Cluster, machine *clusterv1.Machine, eventAction string) error {
 	machineConfig, err := gce.machineproviderconfig(machine.Spec.ProviderConfig)
 	name := machine.ObjectMeta.Name
 	zone := machineConfig.Zone
 	if err != nil {
 		return gce.handleMachineError(machine,
-			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err))
+			apierrors.InvalidMachineConfiguration("Cannot unmarshal machine's providerConfig field: %v", err), eventAction)
 	}
 
 	clusterConfig, err := gce.gceProviderConfigCodec.ClusterProviderFromProviderConfig(cluster.Spec.ProviderConfig)
 	project := clusterConfig.Project
 	if err != nil {
 		return gce.handleMachineError(machine,
-			apierrors.InvalidMachineConfiguration("Cannot unmarshal cluster's providerConfig field: %v", err))
+			apierrors.InvalidMachineConfiguration("Cannot unmarshal cluster's providerConfig field: %v", err), eventAction)
 	}
 
 	if machine.ObjectMeta.Annotations == nil {
@@ -662,16 +665,18 @@ func (gce *GCEClient) validateMachine(machine *clusterv1.Machine, config *gcecon
 // the appropriate reason/message on the Machine.Status. If not, such as during
 // cluster installation, it will operate as a no-op. It also returns the
 // original error for convenience, so callers can do "return handleMachineError(...)".
-func (gce *GCEClient) handleMachineError(machine *clusterv1.Machine, err *apierrors.MachineError) error {
+func (gce *GCEClient) handleMachineError(machine *clusterv1.Machine, err *apierrors.MachineError, eventAction string) error {
 	if gce.v1Alpha1Client != nil {
 		reason := err.Reason
 		message := err.Message
 		machine.Status.ErrorReason = &reason
 		machine.Status.ErrorMessage = &message
 		gce.v1Alpha1Client.Machines(machine.Namespace).UpdateStatus(machine)
+		if eventAction != "" {
+			gce.eventRecorder.Eventf(machine, corev1.EventTypeWarning, "Failed"+eventAction, "%v", err.Reason)
+		}
 	}
 
-	gce.eventRecorder.Eventf(machine, corev1.EventTypeWarning, "FailedCreate", "%v", err)
 	glog.Errorf("Machine error: %v", err.Message)
 	return err
 }
@@ -785,7 +790,7 @@ func (gce *GCEClient) getMetadata(cluster *clusterv1.Cluster, machine *clusterv1
 	if util.IsMaster(machine) {
 		if machine.Spec.Versions.ControlPlane == "" {
 			return nil, gce.handleMachineError(machine, apierrors.InvalidMachineConfiguration(
-				"invalid master configuration: missing Machine.Spec.Versions.ControlPlane"))
+				"invalid master configuration: missing Machine.Spec.Versions.ControlPlane"), createEventAction)
 		}
 		var err error
 		metadataMap, err = masterMetadata(cluster, machine, clusterConfig.Project, &machineSetupMetadata)
