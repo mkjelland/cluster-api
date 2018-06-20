@@ -23,6 +23,7 @@ import (
 	gceconfigv1 "sigs.k8s.io/cluster-api/cloud/google/gceproviderconfig/v1alpha1"
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 	client "sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset/typed/cluster/v1alpha1"
+	"k8s.io/client-go/tools/record"
 )
 
 const (
@@ -35,11 +36,13 @@ type GCEClusterClient struct {
 	computeService         GCEClientComputeService
 	clusterClient          client.ClusterInterface
 	gceProviderConfigCodec *gceconfigv1.GCEProviderConfigCodec
+	eventRecorder  record.EventRecorder
 }
 
 type ClusterActuatorParams struct {
 	ComputeService GCEClientComputeService
 	ClusterClient  client.ClusterInterface
+	EventRecorder  record.EventRecorder
 }
 
 func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error) {
@@ -56,6 +59,7 @@ func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error)
 		computeService:         computeService,
 		clusterClient:          params.ClusterClient,
 		gceProviderConfigCodec: codec,
+		eventRecorder:  params.EventRecorder,
 	}, nil
 }
 

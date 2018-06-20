@@ -25,9 +25,10 @@ import (
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 
 	corev1 "k8s.io/api/core/v1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"regexp"
@@ -46,6 +47,7 @@ import (
 	apierrors "sigs.k8s.io/cluster-api/pkg/errors"
 	"sigs.k8s.io/cluster-api/pkg/kubeadm"
 	"sigs.k8s.io/cluster-api/pkg/util"
+	"k8s.io/client-go/tools/record"
 )
 
 const (
@@ -84,6 +86,7 @@ type GCEClient struct {
 	sshCreds                 SshCreds
 	v1Alpha1Client           client.ClusterV1alpha1Interface
 	machineSetupConfigGetter GCEClientMachineSetupConfigGetter
+	eventRecorder            record.EventRecorder
 }
 
 type MachineActuatorParams struct {
@@ -92,6 +95,7 @@ type MachineActuatorParams struct {
 	Kubeadm                  GCEClientKubeadm
 	V1Alpha1Client           client.ClusterV1alpha1Interface
 	MachineSetupConfigGetter GCEClientMachineSetupConfigGetter
+	EventRecorder            record.EventRecorder
 }
 
 func NewMachineActuator(params MachineActuatorParams) (*GCEClient, error) {
@@ -137,6 +141,7 @@ func NewMachineActuator(params MachineActuatorParams) (*GCEClient, error) {
 		},
 		v1Alpha1Client:           params.V1Alpha1Client,
 		machineSetupConfigGetter: params.MachineSetupConfigGetter,
+		eventRecorder:            params.EventRecorder,
 	}, nil
 }
 
@@ -286,6 +291,8 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 				"error creating GCE instance: %v", err))
 		}
 
+		gce.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Created Machine %v", machine.Name)
+
 		// If we have a v1Alpha1Client, then annotate the machine so that we
 		// remember exactly what VM we created for it.
 		if gce.v1Alpha1Client != nil {
@@ -354,6 +361,8 @@ func (gce *GCEClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 		machine.ObjectMeta.Finalizers = util.Filter(machine.ObjectMeta.Finalizers, clusterv1.MachineFinalizer)
 		_, err = gce.v1Alpha1Client.Machines(machine.Namespace).Update(machine)
 	}
+
+	gce.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Killing", "Killing machine %v", name)
 
 	return err
 }
@@ -662,6 +671,7 @@ func (gce *GCEClient) handleMachineError(machine *clusterv1.Machine, err *apierr
 		gce.v1Alpha1Client.Machines(machine.Namespace).UpdateStatus(machine)
 	}
 
+	gce.eventRecorder.Eventf(machine, corev1.EventTypeWarning, "FailedCreate", "%v", err)
 	glog.Errorf("Machine error: %v", err.Message)
 	return err
 }

@@ -45,7 +45,7 @@ const (
 	gceMachineControllerName = "gce-controller"
 )
 
-func StartMachineController(server *options.MachineControllerServer, shutdown <-chan struct{}) {
+func StartMachineController(server *options.MachineControllerServer, recorder record.EventRecorder, shutdown <-chan struct{}) {
 	config, err := controller.GetConfig(server.CommonConfig.Kubeconfig)
 	if err != nil {
 		glog.Fatalf("Could not create Config for talking to the apiserver: %v", err)
@@ -60,9 +60,11 @@ func StartMachineController(server *options.MachineControllerServer, shutdown <-
 	if err != nil {
 		glog.Fatalf("Could not create config watch: %v", err)
 	}
+
 	params := google.MachineActuatorParams{
 		V1Alpha1Client:           client.ClusterV1alpha1(),
 		MachineSetupConfigGetter: configWatch,
+		EventRecorder:            recorder,
 	}
 	actuator, err := google.NewMachineActuator(params)
 
@@ -102,7 +104,7 @@ func RunMachineController(server *options.MachineControllerServer) error {
 
 	// run function will block and never return.
 	run := func(stop <-chan struct{}) {
-		StartMachineController(server, stop)
+		StartMachineController(server, recorder, stop)
 	}
 
 	leaderElectConfig := config.GetLeaderElectionConfig()
