@@ -88,11 +88,11 @@ type ClusterStatus struct {
 	// If set, indicates that there is a problem reconciling the
 	// state, and will be set to a token value suitable for
 	// programmatic interpretation.
-	ErrorReason common.ClusterStatusError `json:"errorReason"`
+	ErrorReason *common.ClusterStatusError `json:"errorReason,omitempty"`
 
 	// If set, indicates that there is a problem reconciling the
 	// state, and will be set to a descriptive error message.
-	ErrorMessage string `json:"errorMessage"`
+	ErrorMessage *string `json:"errorMessage,omitempty"`
 
 	// Provider-specific status.
 	// It is recommended that providers maintain their

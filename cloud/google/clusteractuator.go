@@ -24,6 +24,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 	client "sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset/typed/cluster/v1alpha1"
 	"k8s.io/client-go/tools/record"
+	apierrors "sigs.k8s.io/cluster-api/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -65,7 +67,7 @@ func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error)
 
 func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	glog.Infof("Reconciling cluster %v.", cluster.Name)
-	err := gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
+	existed, err := gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
 		Name:    cluster.Name + firewallRuleInternalSuffix,
 		Network: "global/networks/default",
 		Allowed: []*compute.FirewallAllowed{
@@ -79,7 +81,7 @@ func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	if err != nil {
 		glog.Warningf("Error creating firewall rule for internal cluster traffic: %v", err)
 	}
-	err = gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
+	existed, err = gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
 		Name:    cluster.Name + firewallRuleApiSuffix,
 		Network: "global/networks/default",
 		Allowed: []*compute.FirewallAllowed{
@@ -94,6 +96,11 @@ func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	if err != nil {
 		glog.Warningf("Error creating firewall rule for core api server traffic: %v", err)
 	}
+
+	if !existed {
+
+	}
+
 	return nil
 }
 
@@ -106,6 +113,8 @@ func (gce *GCEClusterClient) Delete(cluster *clusterv1.Cluster) error {
 	if err != nil {
 		return fmt.Errorf("error deleting firewall rule for core api server traffic: %v", err)
 	}
+
+	gce.eventRecorder.Eventf(cluster, corev1.EventTypeNormal, "Deleted", "Deleted Cluster %v", cluster.Name)
 
 	return nil
 }
@@ -125,29 +134,29 @@ func getOrNewComputeServiceForCluster(params ClusterActuatorParams) (GCEClientCo
 	return computeService, nil
 }
 
-func (gce *GCEClusterClient) createFirewallRuleIfNotExists(cluster *clusterv1.Cluster, firewallRule *compute.Firewall) error {
+func (gce *GCEClusterClient) createFirewallRuleIfNotExists(cluster *clusterv1.Cluster, firewallRule *compute.Firewall) (bool, error) {
 	ruleExists, ok := cluster.ObjectMeta.Annotations[firewallRuleAnnotationPrefix+firewallRule.Name]
 	if ok && ruleExists == "true" {
 		// The firewall rule was already created.
-		return nil
+		return true, nil
 	}
 	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
 	if err != nil {
-		return fmt.Errorf("error parsing cluster provider config: %v", err)
+		return false, fmt.Errorf("error parsing cluster provider config: %v", err)
 	}
 	firewallRules, err := gce.computeService.FirewallsGet(clusterConfig.Project)
 	if err != nil {
-		return fmt.Errorf("error getting firewall rules: %v", err)
+		return false, fmt.Errorf("error getting firewall rules: %v", err)
 	}
 
 	if !gce.containsFirewallRule(firewallRules, firewallRule.Name) {
 		op, err := gce.computeService.FirewallsInsert(clusterConfig.Project, firewallRule)
 		if err != nil {
-			return fmt.Errorf("error creating firewall rule: %v", err)
+			return false, fmt.Errorf("error creating firewall rule: %v", err)
 		}
 		err = gce.computeService.WaitForOperation(clusterConfig.Project, op)
 		if err != nil {
-			return fmt.Errorf("error waiting for firewall rule creation: %v", err)
+			return false, fmt.Errorf("error waiting for firewall rule creation: %v", err)
 		}
 	}
 	// TODO (mkjelland) move this to a GCEClusterProviderStatus #347
@@ -159,7 +168,7 @@ func (gce *GCEClusterClient) createFirewallRuleIfNotExists(cluster *clusterv1.Cl
 	if err != nil {
 		fmt.Errorf("error updating cluster annotations %v", err)
 	}
-	return nil
+	return false, nil
 }
 
 func (gce *GCEClusterClient) containsFirewallRule(firewallRules *compute.FirewallList, ruleName string) bool {
@@ -190,4 +199,20 @@ func (gce *GCEClusterClient) clusterproviderconfig(providerConfig clusterv1.Prov
 		return nil, err
 	}
 	return &config, nil
+}
+
+func (gce *GCEClusterClient) handleClusterError(cluster *clusterv1.Cluster, err *apierrors.ClusterError, eventAction string) error {
+	if gce.clusterClient != nil {
+		reason := err.Reason
+		message := err.Message
+		cluster.Status.ErrorReason = &reason
+		cluster.Status.ErrorMessage = &message
+		gce.clusterClient.Update(cluster)
+		if eventAction != "" {
+			gce.eventRecorder.Eventf(cluster, corev1.EventTypeWarning, "Failed"+eventAction, "%v", err.Reason)
+		}
+	}
+
+	glog.Errorf("Machine error: %v", err.Message)
+	return err
 }

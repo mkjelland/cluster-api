@@ -225,8 +225,8 @@ type MachineSet struct {
 
 type ClusterStatus struct {
 	APIEndpoints   []APIEndpoint
-	ErrorReason    clustercommon.ClusterStatusError
-	ErrorMessage   string
+	ErrorReason    *clustercommon.ClusterStatusError
+	ErrorMessage   *string
 	ProviderStatus *pkgruntime.RawExtension
 }
 
