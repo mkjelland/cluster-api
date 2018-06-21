@@ -35,6 +35,7 @@ type GCEClusterClient struct {
 	computeService         GCEClientComputeService
 	clusterClient          client.ClusterInterface
 	gceProviderConfigCodec *gceconfigv1.GCEProviderConfigCodec
+	serviceAccountService    *ServiceAccountService
 }
 
 type ClusterActuatorParams struct {
@@ -52,10 +53,13 @@ func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error)
 		return nil, err
 	}
 
+	serviceAccountService := NewServiceAccountService(codec)
+
 	return &GCEClusterClient{
 		computeService:         computeService,
 		clusterClient:          params.ClusterClient,
 		gceProviderConfigCodec: codec,
+		serviceAccountService:  serviceAccountService,
 	}, nil
 }
 
@@ -90,17 +94,38 @@ func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	if err != nil {
 		glog.Warningf("Error creating firewall rule for core api server traffic: %v", err)
 	}
+
+	if !gce.serviceAccountService.MasterServiceAccountExists(cluster) {
+		err = gce.serviceAccountService.CreateWorkerNodeServiceAccount(cluster)
+		if err != nil {
+			glog.Warningf("Error creating master node service account: %v", err)
+		}
+	}
+	if !gce.serviceAccountService.WorkerServiceAccountExists(cluster) {
+		err = gce.serviceAccountService.CreateMasterNodeServiceAccount(cluster)
+		if err != nil {
+			glog.Warningf("Error creating worker node service account: %v", err)
+		}
+	}
+
 	return nil
 }
 
 func (gce *GCEClusterClient) Delete(cluster *clusterv1.Cluster) error {
 	err := gce.deleteFirewallRule(cluster, cluster.Name+firewallRuleInternalSuffix)
 	if err != nil {
-		return fmt.Errorf("error deleting firewall rule for internal cluster traffic: %v", err)
+		glog.Warningf("Error deleting firewall rule for internal cluster traffic: %v", err)
 	}
 	err = gce.deleteFirewallRule(cluster, cluster.Name+firewallRuleApiSuffix)
 	if err != nil {
-		return fmt.Errorf("error deleting firewall rule for core api server traffic: %v", err)
+		glog.Warningf("Error deleting firewall rule for core api server traffic: %v", err)
+	}
+
+	if err := gce.serviceAccountService.DeleteMasterNodeServiceAccount(cluster); err != nil {
+		glog.Warningf("Error deleting master node service account: %v", err)
+	}
+	if err := gce.serviceAccountService.DeleteWorkerNodeServiceAccount(cluster); err != nil {
+		glog.Warningf("Error deleting worker node service account: %v", err)
 	}
 
 	return nil

@@ -184,15 +184,6 @@ func (gce *GCEClient) CreateMachineController(cluster *clusterv1.Cluster, initia
 	return nil
 }
 
-func (gce *GCEClient) ProvisionClusterDependencies(cluster *clusterv1.Cluster) error {
-	err := gce.serviceAccountService.CreateWorkerNodeServiceAccount(cluster)
-	if err != nil {
-		return err
-	}
-
-	return gce.serviceAccountService.CreateMasterNodeServiceAccount(cluster)
-}
-
 func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Machine) error {
 	if gce.machineSetupConfigGetter == nil {
 		return errors.New("a valid machineSetupConfigGetter is required")
@@ -384,12 +375,6 @@ func (gce *GCEClient) PostCreate(cluster *clusterv1.Cluster) error {
 }
 
 func (gce *GCEClient) PostDelete(cluster *clusterv1.Cluster) error {
-	if err := gce.serviceAccountService.DeleteMasterNodeServiceAccount(cluster); err != nil {
-		return fmt.Errorf("error deleting master node service account: %v", err)
-	}
-	if err := gce.serviceAccountService.DeleteWorkerNodeServiceAccount(cluster); err != nil {
-		return fmt.Errorf("error deleting worker node service account: %v", err)
-	}
 	if err := gce.serviceAccountService.DeleteIngressControllerServiceAccount(cluster); err != nil {
 		return fmt.Errorf("error deleting ingress controller service account: %v", err)
 	}

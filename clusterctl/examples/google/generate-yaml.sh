@@ -43,12 +43,6 @@ LOADBALANCER_SA_NAME="loadbalancer-$CLUSTER_NAME"
 LOADBALANCER_SA_EMAIL="$LOADBALANCER_SA_NAME@$GCLOUD_PROJECT.iam.gserviceaccount.com"
 LOADBALANCER_SA_KEY=
 
-# TODO: The following service accounts will eventually be provisioned by the cluster controller. In the meanwhile, they are provisioned here.
-MASTER_SA_NAME="master-$CLUSTER_NAME"
-MASTER_SA_EMAIL="$MASTER_SA_NAME@$GCLOUD_PROJECT.iam.gserviceaccount.com"
-WORKER_SA_NAME="worker-$CLUSTER_NAME"
-WORKER_SA_EMAIL="$WORKER_SA_NAME@$GCLOUD_PROJECT.iam.gserviceaccount.com"
-
 MACHINE_CONTROLLER_SSH_PUBLIC_FILE=${OUTPUT_DIR}/machine-controller-key.pub
 MACHINE_CONTROLLER_SSH_PUBLIC=
 MACHINE_CONTROLLER_SSH_PRIVATE_FILE=${OUTPUT_DIR}/machine-controller-key
@@ -134,18 +128,6 @@ fi
 # By default, linux wraps base64 output every 76 cols, so we use 'tr -d' to remove whitespaces.
 # Note 'base64 -w0' doesn't work on Mac OS X, which has different flags.
 LOADBALANCER_SA_KEY=$(cat $LOADBALANCER_SA_FILE | base64 | tr -d '\r\n')
-
-echo Generating $MASTER_SA_EMAIL service account for masters
-gcloud iam service-accounts create --display-name="master service account" $MASTER_SA_NAME
-gcloud projects add-iam-policy-binding $GCLOUD_PROJECT --member=serviceAccount:$MASTER_SA_EMAIL --role=roles/compute.instanceAdmin
-gcloud projects add-iam-policy-binding $GCLOUD_PROJECT --member=serviceAccount:$MASTER_SA_EMAIL --role=roles/compute.networkAdmin
-gcloud projects add-iam-policy-binding $GCLOUD_PROJECT --member=serviceAccount:$MASTER_SA_EMAIL --role=roles/compute.securityAdmin
-gcloud projects add-iam-policy-binding $GCLOUD_PROJECT --member=serviceAccount:$MASTER_SA_EMAIL --role=roles/compute.viewer
-gcloud projects add-iam-policy-binding $GCLOUD_PROJECT --member=serviceAccount:$MASTER_SA_EMAIL --role=roles/storage.admin
-gcloud projects add-iam-policy-binding $GCLOUD_PROJECT --member=serviceAccount:$MASTER_SA_EMAIL --role=roles/storage.objectViewer
-
-echo Generating $WORKER_SA_EMAIL service account for workers
-gcloud iam service-accounts create --display-name="worker service account" $WORKER_SA_NAME
 
 if [ ! -f $MACHINE_CONTROLLER_SSH_PRIVATE_FILE ]; then
   echo Generate SSH key files fo machine controller

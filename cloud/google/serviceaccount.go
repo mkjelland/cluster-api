@@ -79,6 +79,14 @@ func (sas *ServiceAccountService) GetDefaultServiceAccountForMachine(cluster *cl
 	}
 }
 
+func (sas *ServiceAccountService) MasterServiceAccountExists(cluster *clusterv1.Cluster) bool {
+	return cluster.ObjectMeta.Annotations[ClusterAnnotationPrefix+MasterNodeServiceAccountPrefix] == ""
+}
+
+func (sas *ServiceAccountService) WorkerServiceAccountExists(cluster *clusterv1.Cluster) bool {
+	return cluster.ObjectMeta.Annotations[ClusterAnnotationPrefix+WorkerNodeServiceAccountPrefix] == ""
+}
+
 // Creates a GCP service account for the master node, granted permissions
 // that allow the control plane to provision disks and networking resources
 func (sas *ServiceAccountService) CreateMasterNodeServiceAccount(cluster *clusterv1.Cluster) error {
