@@ -328,6 +328,7 @@ func (vc *VsphereClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.M
 		// Annotate the machine so that we remember exactly what VM we created for it.
 		tfState, _ := vc.GetTfState(machine)
 		vc.cleanUpStagingDir(machine)
+		vc.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Created Machine %v", machine.Name)
 		return vc.updateAnnotations(machine, vmIp, tfState)
 	} else {
 		glog.Infof("Skipped creating a VM for machine %s that already exists.", machine.ObjectMeta.Name)
@@ -431,6 +432,10 @@ func (vc *VsphereClient) Delete(cluster *clusterv1.Cluster, machine *clusterv1.M
 	machine.ObjectMeta.Annotations[StatusMachineTerraformState] = ""
 	machine.ObjectMeta.Finalizers = util.Filter(machine.ObjectMeta.Finalizers, clusterv1.MachineFinalizer)
 	_, err = vc.machineClient.Update(machine)
+
+	if err == nil {
+		vc.eventRecorder.Eventf(machine, corev1.EventTypeNormal, "Killing", "Killing machine %v", machine.Name)
+	}
 
 	return err
 }
