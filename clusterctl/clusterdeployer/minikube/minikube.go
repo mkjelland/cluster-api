@@ -30,15 +30,17 @@ type Minikube struct {
 	kubeconfigpath string
 	vmDriver       string
 	proxy          string
+	noProxy        string
 	// minikubeExec implemented as function variable for testing hooks
 	minikubeExec func(env []string, args ...string) (string, error)
 }
 
-func New(vmDriver, proxy string) *Minikube {
+func New(vmDriver, proxy, noProxy string) *Minikube {
 	return &Minikube{
 		minikubeExec: minikubeExec,
 		vmDriver:     vmDriver,
 		proxy:        proxy,
+		noProxy:      noProxy,
 		// Arbitrary file name. Can potentially be randomly generated.
 		kubeconfigpath: "minikube.kubeconfig",
 	}
@@ -75,7 +77,7 @@ func (m *Minikube) Create() error {
 		args = append(args, "--docker-env")
 		args = append(args, fmt.Sprintf("https_proxy=%s", strings.Replace(m.proxy, "http://", "https://", 1)))
 		args = append(args, "--docker-env")
-		args = append(args, fmt.Sprintf("no_proxy=%s,192.168.0.0/16", proxyUrl.Hostname()))
+		args = append(args, fmt.Sprintf("no_proxy=%s,%s", proxyUrl.Hostname(), m.noProxy))
 	}
 
 	_, err := m.exec(args...)

@@ -42,6 +42,7 @@ type CreateOptions struct {
 	Provider               string
 	KubeconfigOutput       string
 	Proxy                  string
+	NoProxy                string
 }
 
 var co = &CreateOptions{}
@@ -76,7 +77,7 @@ func RunCreate(co *CreateOptions) error {
 		return err
 	}
 
-	mini := minikube.New(co.VmDriver, co.Proxy)
+	mini := minikube.New(co.VmDriver, co.Proxy, co.NoProxy)
 	pd, err := getProvider(co.Provider)
 	if err != nil {
 		return err
@@ -119,6 +120,7 @@ func init() {
 	createClusterCmd.Flags().StringVarP(&co.KubeconfigOutput, "kubeconfig-out", "", "kubeconfig", "Where to output the kubeconfig for the provisioned cluster")
 	// Yucky proxy
 	createClusterCmd.Flags().StringVarP(&co.Proxy, "proxy", "", "", "proxy to use WITH the protocol.")
+	createClusterCmd.Flags().StringVarP(&co.NoProxy, "no-proxy", "", "", "no_proxy env vars.")
 
 	createCmd.AddCommand(createClusterCmd)
 }
