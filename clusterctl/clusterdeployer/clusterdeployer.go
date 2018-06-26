@@ -81,6 +81,11 @@ type ClusterDeployer struct {
 	cleanupExternalCluster bool
 }
 
+const (
+	RetryIntervalResourceReady = 10 * time.Second
+	TimeoutResourceReady       = 20 * time.Minute
+)
+
 func New(
 	externalProvisioner ClusterProvisioner,
 	clientFactory ClientFactory,
