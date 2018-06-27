@@ -25,17 +25,25 @@ import (
 	"github.com/golang/glog"
 	"github.com/kubernetes-incubator/apiserver-builder/pkg/builders"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
+	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	apierrors "sigs.k8s.io/cluster-api/pkg/errors"
 	"sigs.k8s.io/cluster-api/pkg/apis/cluster/v1alpha1"
 	clusterapiclientset "sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset"
 	listers "sigs.k8s.io/cluster-api/pkg/client/listers_generated/cluster/v1alpha1"
 	"sigs.k8s.io/cluster-api/pkg/controller/sharedinformers"
 	"sigs.k8s.io/cluster-api/pkg/util"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/apimachinery/pkg/runtime"
+	clusterapiclientsetscheme "sigs.k8s.io/cluster-api/pkg/client/clientset_generated/clientset/scheme"
+	"k8s.io/client-go/rest"
+
 )
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
@@ -47,6 +55,8 @@ var stateConfirmationTimeout = 10 * time.Second
 // stateConfirmationInterval is the amount of time between polling for the desired state.
 // The polling is against a local memory cache.
 var stateConfirmationInterval = 100 * time.Millisecond
+
+const machinesetControllerName = "machineset-controller"
 
 // +controller:group=cluster,version=v1alpha1,kind=MachineSet,resource=machinesets
 type MachineSetControllerImpl struct {
@@ -64,6 +74,8 @@ type MachineSetControllerImpl struct {
 	machineLister listers.MachineLister
 
 	informers *sharedinformers.SharedInformers
+
+	eventRecorder record.EventRecorder
 }
 
 // Init initializes the controller and is called by the generated code
@@ -88,6 +100,11 @@ func (c *MachineSetControllerImpl) Init(arguments sharedinformers.ControllerInit
 	c.informers = arguments.GetSharedInformers()
 
 	c.waitForCacheSync()
+
+	clientSet, err := kubernetes.NewForConfig(
+		rest.AddUserAgent(arguments.GetRestConfig(), machinesetControllerName),
+	)
+	c.eventRecorder, err = c.createRecorder(clientSet)
 }
 
 func (c *MachineSetControllerImpl) waitForCacheSync() {
@@ -174,7 +191,7 @@ func (c *MachineSetControllerImpl) Get(namespace, name string) (*v1alpha1.Machin
 // syncReplicas essentially scales machine resources up and down.
 func (c *MachineSetControllerImpl) syncReplicas(ms *v1alpha1.MachineSet, machines []*v1alpha1.Machine) error {
 	if ms.Spec.Replicas == nil {
-		return fmt.Errorf("the Replicas field in Spec for machineset %v is nil, this should not be allowed.", ms.Name)
+		return c.handleErrorIfExists(ms, apierrors.ScalingMachineSet("the Replicas field in Spec for machineset %v is nil, this should not be allowed.", ms.Name))
 	}
 	diff := len(machines) - int(*(ms.Spec.Replicas))
 
@@ -197,9 +214,11 @@ func (c *MachineSetControllerImpl) syncReplicas(ms *v1alpha1.MachineSet, machine
 		}
 
 		if len(errstrings) > 0 {
-			return fmt.Errorf(strings.Join(errstrings, "; "))
+			err := fmt.Errorf(strings.Join(errstrings, "; "))
+			return c.handleErrorIfExists(ms, apierrors.ScalingMachineSet("error in machineset controller: %v", err))
 		}
-		return c.waitForMachineCreation(machineList)
+		err := c.waitForMachineCreation(machineList)
+		return c.handleErrorIfExists(ms, apierrors.ScalingMachineSet("error in machineset controller: %v", err))
 	} else if diff > 0 {
 		glog.Infof("Too many replicas for %v %s/%s, need %d, deleting %d", controllerKind, ms.Namespace, ms.Name, *(ms.Spec.Replicas), diff)
 
@@ -220,17 +239,22 @@ func (c *MachineSetControllerImpl) syncReplicas(ms *v1alpha1.MachineSet, machine
 				}
 			}(machine)
 		}
+
 		wg.Wait()
 
 		select {
 		case err := <-errCh:
 			// all errors have been reported before and they're likely to be the same, so we'll only return the first one we hit.
 			if err != nil {
-				return err
+				return c.handleErrorIfExists(ms, apierrors.ScalingMachineSet("error in machineset controller: %v", err))
 			}
 		default:
 		}
-		return c.waitForMachineDeletion(machinesToDelete)
+
+	}
+
+	if diff != 0 {
+		c.eventRecorder.Eventf(ms, corev1.EventTypeNormal, "Scaling", "Scaling MachineSet %v from %v to %v replicas", ms.Name, len(machines), int(*(ms.Spec.Replicas)))
 	}
 
 	return nil
@@ -364,4 +388,41 @@ func (c *MachineSetControllerImpl) waitForMachineDeletion(machineList []*v1alpha
 		}
 	}
 	return nil
+}
+
+func (c *MachineSetControllerImpl) handleErrorIfExists(machineset *v1alpha1.MachineSet, err *apierrors.MachineSetError) error {
+	if err == nil {
+		return nil
+	}
+
+	if c.clusterAPIClient.ClusterV1alpha1() != nil {
+		reason := err.Reason
+		message := err.Message
+		machineset.Status.ErrorReason = &reason
+		machineset.Status.ErrorMessage = &message
+		_, machinesetErr := c.clusterAPIClient.ClusterV1alpha1().MachineSets(machineset.Namespace).UpdateStatus(machineset)
+		if machinesetErr != nil {
+			glog.Warningf("Error updating MachineSet Status ErrorReason and Error Message: %v", machinesetErr)
+		}
+	}
+
+	c.eventRecorder.Eventf(machineset, corev1.EventTypeWarning, "FailedScaling", "%v", err.Reason)
+
+	glog.Errorf("MachineSet error: %v", err.Message)
+	return err
+}
+
+func (c *MachineSetControllerImpl) createRecorder(kubeClient *kubernetes.Clientset) (record.EventRecorder, error) {
+
+	eventsScheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(eventsScheme); err != nil {
+		return nil, err
+	}
+	// We also emit events for our own types
+	clusterapiclientsetscheme.AddToScheme(eventsScheme)
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.CoreV1().RESTClient()).Events("")})
+	return eventBroadcaster.NewRecorder(eventsScheme, corev1.EventSource{Component: machinesetControllerName}), nil
 }
