@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Minikube struct {
@@ -80,13 +81,48 @@ func (m *Minikube) Create() error {
 		args = append(args, fmt.Sprintf("no_proxy=%s,%s", proxyUrl.Hostname(), m.noProxy))
 	}
 
-	_, err := m.exec(args...)
+	var err error
+	go func() {
+		_, err = m.exec(args...)
+	}()
 
-	args = []string{"update-context"}
-	// Discard this error
-	_, _ = m.exec(args...)
+	quitChan := make(chan bool)
+	// stop the timer after 300 seconds
+	go func() {
+		<-time.After(300 * time.Second)
+		close(quitChan)
+	}()
+
+	t := time.NewTicker(20 * time.Second)
+	func() {
+		for {
+			select {
+			case <-t.C:
+				didUpdate := m.UpdateContextIfNeeded()
+				if didUpdate {
+					return
+				}
+			case <-quitChan:
+				t.Stop()
+				return
+			}
+		}
+	}()
 
 	return err
+}
+
+func (m *Minikube) UpdateContextIfNeeded() bool {
+	out, _ := m.exec([]string{"status"}...)
+	if strings.Contains(out, "update-context") {
+		m.exec([]string{"update-context"}...)
+		return true
+	}
+
+	if strings.Contains(out, "Correctly Configured") {
+		return true
+	}
+	return false
 }
 
 func (m *Minikube) Delete() error {
