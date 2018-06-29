@@ -140,6 +140,8 @@ data:
         variable "ipv4_gateway" { default = "" }
         variable "dns_nameservers" { default = "" }
 
+        variable "startup_script_path" {}
+
         variable "vm_name" {
           type = "string"
         }
@@ -230,16 +232,15 @@ data:
         http_proxy="http://$${proxy}"
         https_proxy="http://$${proxy}"
         ftp_proxy="http://$${proxy}"
-        no_proxy="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address},$${address}/$${prefixLen}"
+        no_proxy="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address}"
         HTTP_PROXY="http://$${proxy}"
         HTTPS_PROXY="http://$${proxy}"
         FTP_PROXY="http://$${proxy}"
-        NO_PROXY="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address},$${address}/$${prefixLen}"
+        NO_PROXY="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address}"
         EOF
           vars {
             proxy = "${var.proxy}"
             address = "${var.ipv4_address}"
-            prefixLen = "${var.ipv4_netmask_prefix_length}"
           }
         }
 
@@ -331,7 +332,7 @@ data:
           - systemctl start kubernetes-installation.service
         EOF
           vars {
-            startup_script = "${base64encode(file("/tmp/machine-startup.sh"))}"
+            startup_script = "${base64encode(file(var.startup_script_path))}"
             cloud_provider_config = "${base64encode(data.template_file.cloud_provider_config.rendered)}"
             proxy_env = "${base64encode(data.template_file.proxy_env.rendered)}"
             proxy = "${var.proxy}"
@@ -408,6 +409,8 @@ data:
         variable "ipv4_gateway" { default = "" }
         variable "dns_nameservers" { default = "" }
 
+        variable "startup_script_path" {}
+
         variable "vm_name" {
           type = "string"
         }
@@ -464,16 +467,15 @@ data:
         http_proxy="http://$${proxy}"
         https_proxy="http://$${proxy}"
         ftp_proxy="http://$${proxy}"
-        no_proxy="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address},$${address}/$${prefixLen}"
+        no_proxy="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address}"
         HTTP_PROXY="http://$${proxy}"
         HTTPS_PROXY="http://$${proxy}"
         FTP_PROXY="http://$${proxy}"
-        NO_PROXY="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address},$${address}/$${prefixLen}"
+        NO_PROXY="localhost,127.0.0.1,.cluster.local,10.96.0.0/12,192.168.0.0/16,$${address}"
         EOF
           vars {
             proxy = "${var.proxy}"
             address = "${var.ipv4_address}"
-            prefixLen = "${var.ipv4_netmask_prefix_length}"
           }
         }
 
@@ -560,7 +562,7 @@ data:
           - systemctl start kubernetes-installation.service
         EOF
           vars {
-            startup_script = "${base64encode(file("/tmp/machine-startup.sh"))}"
+            startup_script = "${base64encode(file(var.startup_script_path))}"
             proxy_env = "${base64encode(data.template_file.proxy_env.rendered)}"
             proxy = "${var.proxy}"
             static_ip_data = "${base64encode(data.template_file.static_ip_data.rendered)}"
