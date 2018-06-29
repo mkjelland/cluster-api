@@ -114,6 +114,8 @@ const (
 type MachineSetStatusError string
 
 const (
+	ScalingMachineSetError MachineSetStatusError = "ScalingError"
+
 	// Represents that the combination of configuration in the MachineTemplateSpec
 	// is not supported by this cluster. This is not a transient error, but
 	// indicates a state that must be fixed before progress can be made.

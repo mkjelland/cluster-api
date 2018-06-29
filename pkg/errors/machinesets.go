@@ -38,7 +38,7 @@ func (e *MachineSetError) Error() string {
 
 func ScalingMachineSet(msg string, args ...interface{}) *MachineSetError {
 	return &MachineSetError{
-		Reason:  commonerrors.InvalidConfigurationMachineSetError,
+		Reason:  commonerrors.ScalingMachineSetError,
 		Message: fmt.Sprintf(msg, args...),
 	}
 }
