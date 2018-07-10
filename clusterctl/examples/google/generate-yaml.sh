@@ -21,6 +21,9 @@ set -o pipefail
 GCLOUD_PROJECT=$(gcloud config get-value project)
 NETWORK_PROJECT=$(gcloud config get-value project)
 NETWORK=default
+SUBNET=default
+REGION=$(gcloud config get-value compute/region)
+REGION="${REGION:-us-central1}"
 ZONE=$(gcloud config get-value compute/zone)
 ZONE="${ZONE:-us-central1-f}"
 # Generate a somewhat unique cluster name, UUID is not an option as service-accounts are limited to 30 characters in length
@@ -174,6 +177,8 @@ cat $CLUSTER_TEMPLATE_FILE \
   | sed -e "s/\$GCLOUD_PROJECT/$GCLOUD_PROJECT/" \
   | sed -e "s/\$NETWORK_PROJECT/$NETWORK_PROJECT/" \
   | sed -e "s/\$NETWORK/$NETWORK/" \
+  | sed -e "s/\$REGION/$REGION/" \
+  | sed -e "s/\$SUBNET/$SUBNET/" \
   | sed -e "s/\$CLUSTER_NAME/$CLUSTER_NAME/" \
   > $CLUSTER_GENERATED_FILE
 

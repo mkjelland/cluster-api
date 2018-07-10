@@ -250,13 +250,11 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 	name := machine.ObjectMeta.Name
 	project := clusterConfig.Project
 	zone := machineConfig.Zone
-	networkName := clusterConfig.Network
-	if networkName == "" {
-		networkName = "default"
-	}
-	networkProject := clusterConfig.NetworkProject
-	if networkProject == "" {
-		networkProject = project
+
+	networkName := clusterConfig.NetworkName
+	subnetName := clusterConfig.SubnetName
+	if networkName == "" || subnetName == "" {
+		networkName = "global/networks/default"
 	}
 
 	if instance == nil {
@@ -271,7 +269,8 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 			CanIpForward: true,
 			NetworkInterfaces: []*compute.NetworkInterface{
 				{
-					Network: "projects/" + networkProject + "/global/networks/" + networkName,
+					Network: networkName,
+					Subnetwork: subnetName,
 					AccessConfigs: []*compute.AccessConfig{
 						{
 							Type: "ONE_TO_ONE_NAT",

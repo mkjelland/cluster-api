@@ -70,18 +70,14 @@ func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	if err != nil {
 		return fmt.Errorf("error parsing cluster provider config: %v", err)
 	}
-	networkName := clusterConfig.Network
+	networkName := clusterConfig.NetworkName
 	if networkName == "" {
-		networkName = "default"
-	}
-	networkProject := clusterConfig.NetworkProject
-	if networkProject == "" {
-		networkProject = clusterConfig.Project
+		networkName = "global/networks/default"
 	}
 
 	err = gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
 		Name:    cluster.Name + firewallRuleInternalSuffix,
-		Network: "projects/" + networkProject + "/global/networks/" + networkName,
+		Network: networkName,
 		Allowed: []*compute.FirewallAllowed{
 			{
 				IPProtocol: "tcp",
@@ -95,7 +91,7 @@ func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	}
 	err = gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
 		Name:    cluster.Name + firewallRuleApiSuffix,
-		Network: "projects/" + networkProject + "/global/networks/" + networkName,
+		Network: networkName,
 		Allowed: []*compute.FirewallAllowed{
 			{
 				IPProtocol: "tcp",

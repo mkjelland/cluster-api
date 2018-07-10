@@ -19,5 +19,5 @@ spec:
         apiVersion: "gceproviderconfig/v1alpha1"
         kind: "GCEClusterProviderConfig"
         project: "$GCLOUD_PROJECT"
-        network: "$NETWORK"
-        networkProject: "$NETWORK_PROJECT"
+        networkName: "projects/$NETWORK_PROJECT/global/networks/$NETWORK"
+        subnetName: "regions/$REGION/subnetworks/$SUBNET"

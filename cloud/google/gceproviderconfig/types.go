@@ -75,6 +75,6 @@ type GCEClusterProviderConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
 	Project        string `json:"project"`
-	Network        string `json:"network"`
-	NetworkProject string `json:"networkProject"`
+	NetworkName        string `json:"networkName"`
+	SubnetName         string `json:"subnetName"`
 }
