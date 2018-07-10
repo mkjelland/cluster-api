@@ -19,6 +19,8 @@ set -o nounset
 set -o pipefail
 
 GCLOUD_PROJECT=$(gcloud config get-value project)
+NETWORK_PROJECT=$(gcloud config get-value project)
+NETWORK=default
 ZONE=$(gcloud config get-value compute/zone)
 ZONE="${ZONE:-us-central1-f}"
 # Generate a somewhat unique cluster name, UUID is not an option as service-accounts are limited to 30 characters in length

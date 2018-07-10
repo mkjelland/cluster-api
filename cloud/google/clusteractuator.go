@@ -65,9 +65,17 @@ func NewClusterActuator(params ClusterActuatorParams) (*GCEClusterClient, error)
 
 func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	glog.Infof("Reconciling cluster %v.", cluster.Name)
-	err := gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
+
+	clusterConfig, err := gce.clusterproviderconfig(cluster.Spec.ProviderConfig)
+	if err != nil {
+		return fmt.Errorf("error parsing cluster provider config: %v", err)
+	}
+	networkName := clusterConfig.Network
+	networkProject := clusterConfig.NetworkProject
+
+	err = gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
 		Name:    cluster.Name + firewallRuleInternalSuffix,
-		Network: "global/networks/default",
+		Network: "projects/" + networkProject + "/global/networks/" + networkName,
 		Allowed: []*compute.FirewallAllowed{
 			{
 				IPProtocol: "tcp",
@@ -81,7 +89,7 @@ func (gce *GCEClusterClient) Reconcile(cluster *clusterv1.Cluster) error {
 	}
 	err = gce.createFirewallRuleIfNotExists(cluster, &compute.Firewall{
 		Name:    cluster.Name + firewallRuleApiSuffix,
-		Network: "global/networks/default",
+		Network: "projects/" + networkProject + "/global/networks/" + networkName,
 		Allowed: []*compute.FirewallAllowed{
 			{
 				IPProtocol: "tcp",

@@ -70,10 +70,11 @@ type DiskInitializeParams struct {
 	DiskType   string `json:"diskType"`
 }
 
-
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type GCEClusterProviderConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
-	Project     string `json:"project"`
+	Project        string `json:"project"`
+	Network        string `json:"network"`
+	NetworkProject string `json:"networkProject"`
 }
