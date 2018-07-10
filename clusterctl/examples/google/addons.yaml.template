@@ -100,8 +100,8 @@ data:
   gce.conf: |
     [global]
     token-url = nil
-    network = $NETWORK
-    network = $NETWORK_PROJECT
+    network-name = $NETWORK
+    network-project-id = $NETWORK_PROJECT
     project-id = $GCLOUD_PROJECT
     node-tags = $CLUSTER_NAME-worker
 ---

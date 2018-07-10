@@ -249,9 +249,15 @@ func (gce *GCEClient) Create(cluster *clusterv1.Cluster, machine *clusterv1.Mach
 
 	name := machine.ObjectMeta.Name
 	project := clusterConfig.Project
-	networkName := clusterConfig.Network
-	networkProject := clusterConfig.NetworkProject
 	zone := machineConfig.Zone
+	networkName := clusterConfig.Network
+	if networkName == "" {
+		networkName = "default"
+	}
+	networkProject := clusterConfig.NetworkProject
+	if networkProject == "" {
+		networkProject = project
+	}
 
 	if instance == nil {
 		labels := map[string]string{}
