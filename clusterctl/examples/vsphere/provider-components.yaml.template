@@ -264,6 +264,25 @@ data:
             }
         }
 
+        data "template_file" "cloud_init_networking_data" {
+          template = <<EOF
+        dsmode: local
+        ---
+        version: 1
+        config:
+        - type: physical
+          name: ens3
+          subnets:
+          - control: auto
+            type: static
+            address: |
+               "${var.ipv4_address}"
+        EOF
+          vars {
+              ipv4_address = "${var.ipv4_address}"
+            }
+        }
+
         data "template_file" "user_data" {
           template = <<EOF
         #cloud-config
@@ -324,6 +343,11 @@ data:
             encoding: base64
             content: |
               $${static_ip_data}
+          - path: /etc/network/interfaces.d/50-cloud-init.cfg
+            permissions: '0644'
+            encoding: base64
+            content: |
+              $${cloud_init_networking_data}
         runcmd:
           - sudo ip addr flush ens192
           - sudo ifdown ens192 && ifup ens192
@@ -337,6 +361,7 @@ data:
             proxy_env = "${base64encode(data.template_file.proxy_env.rendered)}"
             proxy = "${var.proxy}"
             static_ip_data = "${base64encode(data.template_file.static_ip_data.rendered)}"
+            cloud_init_networking_data = "${base64encode(data.template_file.cloud_init_networking_data.rendered)}"
           }
         }
 
@@ -499,6 +524,25 @@ data:
             }
         }
 
+        data "template_file" "cloud_init_networking_data" {
+          template = <<EOF
+        dsmode: local
+        ---
+        version: 1
+        config:
+        - type: physical
+          name: ens3
+          subnets:
+          - control: auto
+            type: static
+            address: |
+               "${var.ipv4_address}"
+        EOF
+          vars {
+              ipv4_address = "${var.ipv4_address}"
+            }
+        }
+
         // Generate cloud-config for VM startup
         data "template_file" "user_data" {
           template = <<EOF
@@ -554,6 +598,11 @@ data:
             encoding: base64
             content: |
               $${static_ip_data}
+          - path: /etc/network/interfaces.d/50-cloud-init.cfg
+            permissions: '0644'
+            encoding: base64
+            content: |
+              $${cloud_init_networking_data}
         runcmd:
           - sudo ip addr flush ens192
           - sudo ifdown ens192 && ifup ens192
@@ -566,6 +615,7 @@ data:
             proxy_env = "${base64encode(data.template_file.proxy_env.rendered)}"
             proxy = "${var.proxy}"
             static_ip_data = "${base64encode(data.template_file.static_ip_data.rendered)}"
+            cloud_init_networking_data = "${base64encode(data.template_file.cloud_init_networking_data.rendered)}"
           }
         }
 
